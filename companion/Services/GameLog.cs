@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace WarframeCompanion.Services;
 
-public sealed record LogSignal(string Kind, string? Value = null, string? Id = null, int? Rank = null, int? RankMax = null, double? Time = null, bool Sure = false);
+public sealed record LogSignal(string Kind, string? Value = null, string? Id = null, int? Rank = null, int? RankMax = null, double? Time = null, bool Sure = false, bool Historical = false);
 public sealed class GameLog
 {
     public string? Path { get; private set; }
@@ -89,7 +89,7 @@ public sealed class GameLog
                 if (signal.Kind == "login") { Player = signal.Value; AccountId = signal.Id; }
                 if (signal.Kind == "identity") AccountId = signal.Id;
                 // Never act on historical mission/reward events while opening an existing log.
-                if (!historical || signal.Kind is "login" or "identity" or "badge" || signal.Kind.StartsWith("duviri-", StringComparison.Ordinal)) Signal?.Invoke(signal with { Time = time });
+                if (!historical || signal.Kind is "login" or "identity" or "badge" || signal.Kind.StartsWith("duviri-", StringComparison.Ordinal)) Signal?.Invoke(signal with { Time = time, Historical = historical });
             }
             foreach (var candidate in Candidates(line, Player)) Signal?.Invoke(candidate with { Time = time });
         }

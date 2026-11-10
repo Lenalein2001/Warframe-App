@@ -12,6 +12,40 @@ public static class IntegrationTests
     private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
     public static void Register(Action<string, Action> test)
     {
+        test("Compositor bindings normalize modifiers and replace only the managed Lua block", () =>
+        {
+            Check(CompositorBindings.Line("sway", "Win+Alt+F9", "curl") == "bindsym Mod4+Mod1+F9 exec curl", "Sway modifiers differ");
+            Check(CompositorBindings.Line("hyprland", "Ctrl+F10", "curl") == "bind = CTRL, F10, exec, curl", "Hyprland modifiers differ");
+            var line = CompositorBindings.Line("hyprland-lua", "Super+F9", "curl");
+            Check(line == "hl.bind(\"SUPER + F9\", hl.dsp.exec_cmd(\"curl\"))", "Lua binding differs");
+            var initial = CompositorBindings.MergeLua("-- User configuration\n", [line]);
+            var again = CompositorBindings.MergeLua(initial.Text, [line]);
+            Check(initial.Added && !again.Added && again.Text == initial.Text, "Lua installation is not idempotent");
+            var updated = CompositorBindings.MergeLua(initial.Text + "-- User footer\n", []);
+            Check(updated.Text.StartsWith("-- User configuration", StringComparison.Ordinal) && updated.Text.EndsWith("-- User footer\n", StringComparison.Ordinal) && !updated.Text.Contains("hl.bind"), "Disabling keys changed user configuration");
+            try { CompositorBindings.MergeLua("-- >>> warframeproject hotkeys (managed)", []); throw new Exception("Broken managed block accepted"); } catch (InventoryException) { }
+        });
+        test("Historical login preserves selected account and inferred identity retains inventory", () => InDirectory(directory =>
+        {
+            var logPath = Path.Combine(directory, "EE.log");
+            File.WriteAllText(logPath, "Sys [Info]: Logged in FixturePlayer\nFixturePlayer 0123456789abcdef01234567\n");
+            var store = new StateStore(Path.Combine(directory, "state.sqlite"));
+            store.Write("registry", new RegistryState { Active = "view", Switched = J.Now, Accounts = [new() { Key = "view", Name = "Viewed" }, new() { Key = "game", Name = "FixturePlayer" }] });
+            var settings = Settings.Defaults(); settings["ee_log_path"] = logPath; settings["ocr_enabled"] = false; store.Write("settings", settings);
+            var snapshots = new SnapshotStore(Path.Combine(directory, "companion.sqlite"));
+            snapshots.Commit(InventoryParser.Parse(Encoding.UTF8.GetBytes("""{"MiscItems":[{"ItemType":"/Fixture","ItemCount":7}],"LastInventorySync":123}"""), "game", true));
+            var runtime = new CompanionRuntime(directory, true);
+            try
+            {
+                runtime.Start();
+                var state = runtime.Get("state", new Dictionary<string, string>());
+                Check(J.S(state["account"], "key") == "view", "Historical login overwrote the selected account");
+                var game = J.A(state, "accounts").Single(a => J.S(a, "key") == "game");
+                Check(J.S(game, "id") == "0123456789abcdef01234567", "Certain log identity was not linked");
+                Check(snapshots.Current("0123456789abcdef01234567")?.Counts.GetValueOrDefault("/Fixture") == 7, "Linking hid the previous inventory");
+            }
+            finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
         test("Log tail preserves split UTF-8 and suppresses historical reward events", () =>
         {
             var directory = Path.Combine(Path.GetTempPath(), "wfc-log-" + Guid.NewGuid().ToString("N"));

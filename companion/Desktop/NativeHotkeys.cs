@@ -52,17 +52,30 @@ internal sealed class NativeHotkeys(CompanionRuntime runtime, string url) : IDis
     {
         var hypr = Environment.GetEnvironmentVariable("HYPRLAND_INSTANCE_SIGNATURE") != null; var sway = Environment.GetEnvironmentVariable("SWAYSOCK") != null;
         if (!hypr && !sway) throw new InventoryException("No supported compositor detected. Bind the displayed commands in your desktop's shortcut settings.");
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile); var dir = Path.Combine(home, ".config", hypr ? "hypr" : "sway"); var main = Path.Combine(dir, hypr ? "hyprland.conf" : "config");
+        var lua = hypr && ScreenCapture.Run("hyprctl", ["systeminfo"], stop.Token, 5).GetAwaiter().GetResult().Contains("configProvider: lua", StringComparison.Ordinal);
+        var flavour = hypr ? lua ? "hyprland-lua" : "hyprland" : "sway";
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile); var dir = Path.Combine(home, ".config", hypr ? "hypr" : "sway"); var main = Path.Combine(dir, lua ? "lua/keybindings.lua" : hypr ? "hyprland.conf" : "config");
         if (!File.Exists(main)) throw new InventoryException("Compositor configuration was not found.");
         var config = runtime.GetSettings(); var pairs = new[] { (J.S(config, "hotkey_rewards"), "rewards/scan"), (J.S(config, "hotkey_riven"), "riven/scan") };
-        var lines = pairs.Where(p => !string.IsNullOrWhiteSpace(p.Item1)).Select(p => {
-            var keys = p.Item1!.Split('+'); var command = "curl -s -X POST " + url + "/api/" + p.Item2;
-            return hypr ? "bind = " + string.Join(' ', keys.SkipLast(1).Select(k => k.Replace("Ctrl", "CTRL", StringComparison.OrdinalIgnoreCase).Replace("Win", "SUPER", StringComparison.OrdinalIgnoreCase))) + ", " + keys[^1] + ", exec, " + command : "bindsym " + p.Item1 + " exec " + command; }).ToArray();
+        var lines = pairs.Where(p => !string.IsNullOrWhiteSpace(p.Item1)).Select(p => CompositorBindings.Line(flavour, p.Item1!, "curl -s -X POST " + url + "/api/" + p.Item2)).ToArray();
+        if (lua)
+        {
+            var merged = CompositorBindings.MergeLua(File.ReadAllText(main), lines);
+            File.Copy(main, main + ".warframe-backup-" + Guid.NewGuid().ToString("N"), false);
+            Atomic(main, merged.Text);
+            ReloadLinux("hyprctl");
+            return J.Node(new { file = main, sourced = merged.Added, lines });
+        }
         var target = Path.Combine(dir, "warframe-companion.conf"); Atomic(target, "# Managed by Warframe Companion\n" + string.Join('\n', lines) + "\n");
         var text = File.ReadAllText(main); var include = (hypr ? "source = " : "include ") + target; var added = !text.Contains(include, StringComparison.Ordinal);
         if (added) { File.Copy(main, main + ".warframe-backup-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss"), false); Atomic(main, text.TrimEnd() + "\n\n" + include + "\n"); }
-        ScreenCapture.Run(hypr ? "hyprctl" : "swaymsg", ["reload"], stop.Token).GetAwaiter().GetResult();
+        ReloadLinux(hypr ? "hyprctl" : "swaymsg");
         return J.Node(new { file = target, sourced = added, lines });
+    }
+    private void ReloadLinux(string program)
+    {
+        var result = ScreenCapture.Run(program, ["reload"], stop.Token, 15).GetAwaiter().GetResult();
+        if (result.Contains("error", StringComparison.OrdinalIgnoreCase)) throw new InventoryException("Compositor reload reported an error. The previous configuration was backed up.");
     }
     private static void Atomic(string path, string content) { var tmp = path + "." + Guid.NewGuid().ToString("N") + ".tmp"; try { File.WriteAllText(tmp, content); File.Move(tmp, path, true); } finally { if (File.Exists(tmp)) File.Delete(tmp); } }
     private void StopThread() { if (thread is { IsAlive: true }) { PostThreadMessage(threadId, 0x12, 0, 0); thread.Join(TimeSpan.FromSeconds(5)); } thread = null; }

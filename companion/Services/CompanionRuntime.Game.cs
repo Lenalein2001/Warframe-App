@@ -39,7 +39,10 @@ public sealed partial class CompanionRuntime
                 var account = next.Accounts.FirstOrDefault(a => signal.Id != null && a.Id == signal.Id) ?? next.Accounts.FirstOrDefault(a => string.Equals(a.Name, signal.Value, StringComparison.OrdinalIgnoreCase) && (signal.Id == null || a.Id == null || a.Id == signal.Id));
                 if (account == null) { account = new() { Key = "account-" + Guid.NewGuid().ToString("N"), Name = signal.Value, Id = signal.Id, Source = "EE.log" }; next.Accounts.Add(account); }
                 account.Seen = signal.Time ?? account.Seen; if (signal.Id != null) LinkLogAccount(account, signal.Id);
-                playingKey = account.Key; next.Active = account.Key; SaveRegistry(next); memoryRequested = true;
+                if (playingKey != account.Key) Interlocked.Increment(ref rewardGeneration);
+                playingKey = account.Key;
+                if (!signal.Historical || next.Active == null || (signal.Time ?? 0) > next.Switched) { next.Active = account.Key; next.Switched = signal.Time ?? J.Now; }
+                SaveRegistry(next); memoryRequested = true;
             }
             else if (signal.Kind == "identity" && playingKey != null)
             {

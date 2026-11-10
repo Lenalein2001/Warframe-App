@@ -9,6 +9,7 @@ namespace WarframeCompanion.Services;
 public sealed class RegistryState
 {
     public string? Active { get; set; }
+    public double Switched { get; set; }
     public List<AccountState> Accounts { get; set; } = [];
 }
 
@@ -206,9 +207,9 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
                 }
                 break;
             case "account/switch":
-                lock (sync) { var key = J.S(body, "key"); if (!registry.Accounts.Any(a => a.Key == key)) throw new InventoryException("Unknown account."); var next = new RegistryState { Active = key, Accounts = registry.Accounts }; SaveRegistry(next); } break;
+                lock (sync) { var key = J.S(body, "key"); if (!registry.Accounts.Any(a => a.Key == key)) throw new InventoryException("Unknown account."); var next = new RegistryState { Active = key, Accounts = registry.Accounts, Switched = J.Now }; SaveRegistry(next); } break;
             case "account/forget":
-                lock (sync) { var key = J.S(body, "key"); var accounts = registry.Accounts.Where(a => a.Key != key).ToList(); SaveRegistry(new() { Accounts = accounts, Active = registry.Active == key ? accounts.FirstOrDefault()?.Key : registry.Active }); } break;
+                lock (sync) { var key = J.S(body, "key"); var accounts = registry.Accounts.Where(a => a.Key != key).ToList(); SaveRegistry(new() { Accounts = accounts, Active = registry.Active == key ? accounts.FirstOrDefault()?.Key : registry.Active, Switched = J.Now }); } break;
             case "profile/import":
                 var profile = StateStore.ParseProfile(body);
                 EditAccount(a => {

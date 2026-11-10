@@ -20,7 +20,7 @@ public static class LegacyMigration
         if (raw == null && oldSettings == null && !File.Exists(Path.Combine(data, "profile.json"))) return null;
         var settings = Settings.Defaults();
         if (oldSettings is JsonObject fields) foreach (var field in fields) { try { settings = Settings.Patch(settings, new JsonObject { [field.Key] = field.Value?.DeepClone() }); } catch (InventoryException) { } }
-        var registry = new RegistryState { Active = J.S(raw, "active") };
+        var registry = new RegistryState { Active = J.S(raw, "active"), Switched = J.D(raw?["switched"]) ?? 0 };
         var accounts = J.A(raw, "accounts").ToArray();
         if (accounts.Length == 0) accounts = [J.Node(new { key = "legacy", name = "Account 1", id = J.S(oldSettings, "account_id") })];
         foreach (var old in accounts)

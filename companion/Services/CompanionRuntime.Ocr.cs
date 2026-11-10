@@ -30,6 +30,8 @@ public sealed partial class CompanionRuntime
     public async Task<JsonNode> ScanRewards(bool automatic, CancellationToken cancellation)
     {
         if (!await ocrGate.WaitAsync(0, cancellation)) { lock (sync) return rewards.DeepClone(); }
+        string? accountKey;
+        lock (sync) accountKey = playingKey ?? registry.Active;
         var generation = Interlocked.Read(ref rewardGeneration); var started = J.Now; CapturedScreen? screen = null;
         try
         {
@@ -58,13 +60,16 @@ public sealed partial class CompanionRuntime
             }
             string? Best() => items.Where(i => J.N(i, "price") > 0).OrderByDescending(i => J.N(i, "price")).Select(i => J.S(i, "name")).FirstOrDefault();
             var result = J.Node(new { t = J.Now, items, best = Best(), ocr = string.Join('\n', text), error = items.Count == 0 ? "No reward names could be read." : layout == null ? "Unconfirmed screen: these names are not recorded in history." : null, cards = layout?.Cards, scale = layout?.Scale });
-            lock (sync) rewards = result.DeepClone();
+            lock (sync)
+            {
+                if (accountKey != (playingKey ?? registry.Active) || generation != Interlocked.Read(ref rewardGeneration)) return new JsonObject();
+                rewards = result.DeepClone();
+            }
             if (layout != null && items.Count > 0 && generation == Interlocked.Read(ref rewardGeneration))
             {
-                lock (sync) History.Record(result, playingKey ?? registry.Active);
+                lock (sync) History.Record(result, accountKey);
                 if (J.B(config["notify"])) Notify("reward:" + J.D(result["t"]), "Relic rewards", string.Join(" · ", items.Select(i => J.S(i, "name") + (J.Get(i, "price") != null ? " " + J.N(i, "price") + "p" : ""))));
                 if (J.B(config["overlay_enabled"])) OverlayRequested?.Invoke(new("rewards", result.DeepClone(), screen.X, screen.Y, screen.Bitmap.Width, screen.Bitmap.Height, unit, (int)J.N(config, "overlay_seconds", 15), J.S(config, "overlay_position") == "above", J.S(config, "overlay_backend") ?? "auto", screen.CoordinateScale));
-                var accountKey = playingKey ?? registry.Active;
                 for (var attempt = 0; attempt < 8 && !Offline && generation == Interlocked.Read(ref rewardGeneration); attempt++)
                 {
                     if (items.All(i => J.Get(i, "price") != null || J.S(i, "slug") == null)) break;
