@@ -1,20 +1,19 @@
-import hashlib,json,pathlib,re
-root=pathlib.Path(__file__).resolve().parents[1]
-s=(root/'src/server.rs').read_text()
-routes={}
-for method,begin,end in [('GET','fn get_api','fn post_api'),('POST','fn post_api','#[cfg(test)]')]:
-    section=s[s.index(begin):s.index(end,s.index(begin))]
-    routes[method]=sorted(set(re.findall(r'^        "([a-z/-]+)"\s*=>',section,re.M)) | ({'state','art'} if method=='GET' else set()))
+"""Check preserved interface and route contracts without the retired backend."""
+import hashlib, json, pathlib, re
+root = pathlib.Path(__file__).resolve().parents[1]
+manifest = json.loads((root / 'docs/migration/contracts.json').read_text())
 def digest(path):
-    data=path.read_bytes()
-    # Git's autocrlf changes text checkouts on Windows; binary assets remain byte-exact.
-    if path.suffix in {'.js','.css','.html','.txt'}:
-        data=data.replace(b'\r\n',b'\n')
+    data = path.read_bytes()
+    if path.suffix in {'.js','.css','.html','.txt'}: data = data.replace(b'\r\n', b'\n')
     return hashlib.sha256(data).hexdigest()
-manifest={'baseline':'decc9b5','textHashFormat':'LF-normalized','routes':routes,'web':{p.relative_to(root).as_posix():digest(p) for p in sorted((root/'web').rglob('*')) if p.is_file()}}
-target=root/'docs/migration/contracts.json'
-if '--check' in __import__('sys').argv:
-    assert json.loads(target.read_text())==manifest, 'Frontend or Rust API changed; review the migration contract before updating.'
-    print(f'Preserved {len(manifest["web"])} frontend files and {sum(map(len,routes.values()))} API routes.')
-else:
-    target.write_text(json.dumps(manifest,indent=2)+'\n')
+actual = {p.relative_to(root).as_posix(): digest(p) for p in sorted((root/'web').rglob('*')) if p.is_file()}
+assert actual == manifest['web'], 'Preserved frontend changed; review the contract.'
+s = (root/'companion/Services/CompanionRuntime.cs').read_text()
+g = s[s.index('public JsonNode Get('):s.index('public async Task<JsonNode> Post(')]
+p = s[s.index('public async Task<JsonNode> Post('):]
+routes = {'GET': set(re.findall(r'"([a-z/-]+)"\s*=>',g)) | set(re.findall(r'path == "([a-z/-]+)"',g)) | {'art'}, 'POST': set(re.findall(r'case "([a-z/-]+)":',p))}
+for method, expected in manifest['routes'].items():
+    missing = set(expected) - routes[method]
+    assert not missing, f'Missing {method} handlers: {sorted(missing)}'
+assert not list((root/'src').rglob('*.rs')), 'Retired source still present.'
+print(f'Preserved {len(actual)} frontend files and {sum(map(len,manifest["routes"].values()))} API routes.')

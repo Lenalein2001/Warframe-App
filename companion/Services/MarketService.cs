@@ -50,7 +50,7 @@ public sealed class MarketService : IAsyncDisposable
         {
             if (J.S(entry, "slug") is not { } slug) continue;
             var en = J.Get(J.Get(entry, "i18n"), "en"); var name = J.S(en, "name"); var gameRef = J.S(entry, "gameRef");
-            var image = J.S(en, "thumb") ?? J.S(en, "icon");
+            var image = J.S(en, "subIcon") ?? J.S(en, "thumb") ?? J.S(en, "icon");
             next[slug] = new(slug, name, gameRef, J.Get(entry, "ducats") == null ? null : J.N(entry, "ducats"), image == null ? null : "https://warframe.market/static/assets/" + image);
             if (name != null) names.TryAdd(name, slug); if (gameRef != null) refs.TryAdd(gameRef, slug);
         }
@@ -65,6 +65,25 @@ public sealed class MarketService : IAsyncDisposable
         return candidate;
     }
     public MarketItem? Item(string? slug) => slug != null ? items.GetValueOrDefault(slug) : null;
+    public static string? SlotGlyph(string category, string uid)
+    {
+        var (folder, slots) = category switch
+        {
+            "Warframes" => ("warframe", new[] { "chassis", "helmet", "systems" }),
+            "Archwing" => ("archwing", ["chassis", "systems", "wings"]),
+            "Sentinels" => ("sentinel", ["carapace", "cerebrum", "systems"]),
+            "Primary" or "Secondary" or "Melee" or "Arch-Gun" or "Arch-Melee" or "SentinelWeapons" =>
+                ("weapon", ["aegis", "barrel", "blade", "chassis", "disc", "engine", "gauntlet", "grip", "guard", "handle", "head", "heatsink", "hilt", "limb", "link", "motor", "receiver", "rivet", "stock", "string"]),
+            _ => ("", Array.Empty<string>())
+        };
+        var last = uid.Split('/')[^1].ToLowerInvariant();
+        var blueprint = last.EndsWith("blueprint", StringComparison.Ordinal);
+        var stem = blueprint ? last[..^9] : last;
+        if (stem.EndsWith("component", StringComparison.Ordinal)) stem = stem[..^9];
+        var slot = slots.FirstOrDefault(s => stem.EndsWith(s, StringComparison.Ordinal));
+        const string assets = "https://warframe.market/static/assets/sub_icons/";
+        return slot != null ? assets + folder + "/generic_" + slot + "_128x128.png" : blueprint ? assets + "blueprint_128x128.png" : null;
+    }
     public MarketPrice? Price(string? slug, bool request = true, int maxMinutes = 360)
     {
         if (slug == null) return null;

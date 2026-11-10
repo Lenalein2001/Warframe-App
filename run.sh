@@ -1,38 +1,30 @@
 #!/usr/bin/env bash
-# Start warframeproject from this checkout. Builds the release binary first when the sources
-# changed (the first build takes a few minutes; after that it is a no-op), then runs it.
-# On NixOS the toolchain and libraries come from shell.nix automatically.
-#
-#   ./run.sh                    open the app; the terminal has to stay open
-#   ./run.sh --detach           hand it to init and give the terminal back (log: ~/.cache/warframeproject/app.log)
-#   ./run.sh quit               close a running app
-#   ./run.sh trigger | riven    scan the reward screen / grade the riven on screen, in the running app
-#   ./run.sh replay FRAME       read a saved screenshot without the app (see README)
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
-
-if [ "${1:-}" = "--detach" ] || [ "${1:-}" = "-d" ]; then
+if [[ "${1:-}" == "--detach" || "${1:-}" == "-d" ]]; then
   shift
-  # A crash that only ever reached a terminal that is now gone is a crash nobody can read.
-  log="${XDG_CACHE_HOME:-$HOME/.cache}/warframeproject"
+  log="${XDG_CACHE_HOME:-$HOME/.cache}/WarframeCompanion"
   mkdir -p "$log"
   setsid nohup "$0" "$@" >>"$log/app.log" 2>&1 </dev/null &
-  echo "warframeproject started in the background. Log: $log/app.log"
-  echo "Close the window, or run: ./run.sh quit"
+  echo "Warframe Companion started. Log: $log/app.log"
   exit 0
 fi
-
-if command -v cargo >/dev/null && pkg-config --exists webkit2gtk-4.1 gtk-layer-shell-0 2>/dev/null; then
-  cargo build --release --quiet
-  exec ./target/release/warframeproject "$@"
+case "${1:-}" in
+  quit|trigger|riven)
+    action="$1"
+    case "$action" in trigger) action="rewards/scan";; riven) action="riven/scan";; esac
+    exec curl --fail --silent --show-error -X POST "http://127.0.0.1:${WFC_PORT:-8642}/api/$action"
+    ;;
+esac
+if command -v dotnet >/dev/null && command -v cmake >/dev/null && pkg-config --exists webkit2gtk-4.1 gtk-layer-shell-0; then
+  cmake -S companion/Native -B companion/Native/build -DCMAKE_BUILD_TYPE=Release
+  cmake --build companion/Native/build --parallel
+  dotnet build companion/Desktop -c Release -p:RestoreLockedMode=true
+  exec dotnet companion/Desktop/bin/Release/net10.0/WarframeCompanion.Desktop.dll "$@"
 fi
-
-if [ -e /etc/NIXOS ] && command -v nix-shell >/dev/null; then
-  args=""
-  for a in "$@"; do args+=" $(printf '%q' "$a")"; done
-  exec nix-shell "$PWD/shell.nix" --run "cargo build --release --quiet && exec ./target/release/warframeproject$args"
+if [[ -e /etc/NIXOS ]] && command -v nix-shell >/dev/null && [[ -z "${IN_NIX_SHELL:-}" ]]; then
+  printf -v arguments '%q ' "$@"
+  exec nix-shell shell.nix --run "./run.sh $arguments"
 fi
-
-echo "Building needs cargo plus the development files of GTK 3, WebKitGTK 4.1 and gtk-layer-shell," >&2
-echo "or Nix. See README.md." >&2
+echo "Install .NET SDK 10, CMake, C++, GTK3, WebKitGTK 4.1 and gtk-layer-shell. See companion/README.md." >&2
 exit 1

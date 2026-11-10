@@ -1,89 +1,54 @@
-# Builds the Windows exe on a real Windows machine. Every push to main checks that it still builds
-# and reads a reward screen; publishing a release attaches the exe to it.
-name: Windows
-
+name: Windows packages
 on:
   push:
-    branches: [main]
+    branches: [senpai]
   release:
     types: [published]
   workflow_dispatch:
-
 permissions:
   contents: write
-
 jobs:
-  build:
+  package:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Test
-        run: cargo test
-
-      # The OCR program goes into the exe, so Windows users have nothing to install.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
       - uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
           update: false
           install: mingw-w64-ucrt-x86_64-tesseract-ocr zip
-      - name: Pack tesseract
+      - name: Bundle OCR fallback
         shell: msys2 {0}
         run: bash .github/bundle-tesseract.sh "$(cygpath -u "$GITHUB_WORKSPACE")/tesseract.zip"
-
-      - name: Build
-        run: cargo build --release --features bundled-tesseract
-        env:
-          WFP_TESSERACT_ZIP: ${{ github.workspace }}\tesseract.zip
-          # The C runtime goes into the exe too, so it runs without the Visual C++ redistributable.
-          RUSTFLAGS: -C target-feature=+crt-static
-
-      # Draws a reward screen as the game lays it out at 1920x1080 and 100% interface scale - four
-      # cards, 242 px wide, centred, each name bottom-aligned above its rarity bar - and has the exe
-      # read it with nothing but Windows itself on PATH: proves the packed OCR is complete.
-      - name: Read a reward screen with the exe
-        shell: powershell
+      - name: Build and test packages
+        shell: pwsh
         run: |
-          Add-Type -AssemblyName System.Drawing
-          $names = "Braton Prime Receiver", "Paris Prime String", "Forma Blueprint", "Ash Prime Systems Blueprint"
-          $bmp = New-Object System.Drawing.Bitmap 1920, 1080
-          $g = [System.Drawing.Graphics]::FromImage($bmp)
-          $g.Clear([System.Drawing.Color]::FromArgb(11, 18, 24))
-          $font = New-Object System.Drawing.Font("Arial", 20, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
-          $brush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(190, 220, 255))
-          $outline = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(12, 8, 10))
-          $bar = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(130, 78, 56))
-          $bottom = New-Object System.Drawing.StringFormat
-          $bottom.Alignment = [System.Drawing.StringAlignment]::Center
-          $bottom.LineAlignment = [System.Drawing.StringAlignment]::Far
-          for ($i = 0; $i -lt 4; $i++) {
-            $x = 476 + 242 * $i
-            $g.DrawString($names[$i], $font, $brush, (New-Object System.Drawing.RectangleF ($x + 6), 390, 230, 67), $bottom)
-            $g.FillRectangle($outline, $x + 4, 473, 234, 11)
-            $g.FillRectangle($bar, $x + 4, 476, 234, 5)
-          }
-          $bmp.Save("$PWD\frame.png", [System.Drawing.Imaging.ImageFormat]::Png)
-          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
-          $p = Start-Process -FilePath target\release\warframeproject.exe -ArgumentList "replay", "frame.png" `
-            -NoNewWindow -Wait -PassThru -RedirectStandardOutput out.txt -RedirectStandardError err.txt
-          Get-Content out.txt, err.txt
-          $read = @($names | Where-Object { (Get-Content out.txt -Raw) -match [regex]::Escape($_) }).Count
-          if ($p.ExitCode -ne 0 -or $read -lt 3) { throw "read $read of 4 names (exit code $($p.ExitCode))" }
-
-      - name: Package
-        shell: bash
-        run: cp target/release/warframeproject.exe warframeproject-windows-x64.exe
-
+          Expand-Archive tesseract.zip -DestinationPath artifacts/ocr
+          ./tools/publish-companion.ps1 -TesseractRoot "$PWD/artifacts/ocr"
+          dotnet run --project companion/Tests -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed.' }
+          python tools/smoke-desktop-package.py (Get-ChildItem artifacts/companion-win-x64-* -Directory | Select-Object -Last 1).FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Package smoke tests failed.' }
       - uses: actions/upload-artifact@v4
         with:
-          name: warframeproject-windows-x64
-          path: warframeproject-windows-x64.exe
-
-      - name: Attach to the release
-        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
-        shell: bash
+          name: WarframeCompanion-win-x64
+          path: |
+            artifacts/companion-win-x64-*/*.zip
+            artifacts/companion-win-x64-*/measurements.json
+      - name: Attach C# packages to release
+        if: github.event_name == 'release'
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" warframeproject-windows-x64.exe --clobber
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          $folder = Get-ChildItem artifacts/companion-win-x64-* -Directory | Select-Object -Last 1
+          foreach ($edition in @('framework-dependent', 'self-contained')) {
+            $asset = Join-Path $folder.FullName "WarframeCompanion-win-x64-$edition.zip"
+            Copy-Item -LiteralPath (Join-Path $folder.FullName "$edition.zip") -Destination $asset
+            gh release upload "$env:RELEASE_TAG" "$asset" --repo "$env:GITHUB_REPOSITORY"
+            if ($LASTEXITCODE -ne 0) { throw 'Release upload failed.' }
+          }

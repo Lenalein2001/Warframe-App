@@ -1,0 +1,80 @@
+[
+  {
+    "pname": "Microsoft.Data.Sqlite",
+    "version": "10.0.15",
+    "sha256": "10ddeafedfdffa276f26867a400bdd9290a12a667551431ddb1aa9cc9669a79b",
+    "url": "https://api.nuget.org/v3-flatcontainer/microsoft.data.sqlite/10.0.15/microsoft.data.sqlite.10.0.15.nupkg"
+  },
+  {
+    "pname": "Microsoft.Data.Sqlite.Core",
+    "version": "10.0.15",
+    "sha256": "56479098121b7d0feb2fed11bec4746b9ae4ae1410601ecb4a954c0b89f937c3",
+    "url": "https://api.nuget.org/v3-flatcontainer/microsoft.data.sqlite.core/10.0.15/microsoft.data.sqlite.core.10.0.15.nupkg"
+  },
+  {
+    "pname": "Photino.NET",
+    "version": "4.0.16",
+    "sha256": "71bc433789eebb0605e246285de66bd87185c01d064eef105eb103ec7cf3ea9b",
+    "url": "https://api.nuget.org/v3-flatcontainer/photino.net/4.0.16/photino.net.4.0.16.nupkg"
+  },
+  {
+    "pname": "Photino.Native",
+    "version": "4.0.22",
+    "sha256": "a3033b446c0577a5f96f0d6db4c81a43aa9ffb5e7b776387bf9209a7e565617b",
+    "url": "https://api.nuget.org/v3-flatcontainer/photino.native/4.0.22/photino.native.4.0.22.nupkg"
+  },
+  {
+    "pname": "SQLite",
+    "version": "3.53.4",
+    "sha256": "5641eb58e88429fd73d09fc294bdaa610a6e99099f4141de912a5e4aa6d773ca",
+    "url": "https://api.nuget.org/v3-flatcontainer/sqlite/3.53.4/sqlite.3.53.4.nupkg"
+  },
+  {
+    "pname": "SQLitePCLRaw.bundle_e_sqlite3",
+    "version": "3.0.5",
+    "sha256": "e325ce61a86bca381fbd35487264481e1c6a39663546fec82035fa661198c2a1",
+    "url": "https://api.nuget.org/v3-flatcontainer/sqlitepclraw.bundle_e_sqlite3/3.0.5/sqlitepclraw.bundle_e_sqlite3.3.0.5.nupkg"
+  },
+  {
+    "pname": "SQLitePCLRaw.config.e_sqlite3",
+    "version": "3.0.5",
+    "sha256": "1c3908111a4a14e898839836bea9c4da390edc669b297c404de92422abee3ab1",
+    "url": "https://api.nuget.org/v3-flatcontainer/sqlitepclraw.config.e_sqlite3/3.0.5/sqlitepclraw.config.e_sqlite3.3.0.5.nupkg"
+  },
+  {
+    "pname": "SQLitePCLRaw.core",
+    "version": "3.0.5",
+    "sha256": "7476b4b8e067d88c4cb598a31893b511037b88e05c28d524f4b4433fe9f69048",
+    "url": "https://api.nuget.org/v3-flatcontainer/sqlitepclraw.core/3.0.5/sqlitepclraw.core.3.0.5.nupkg"
+  },
+  {
+    "pname": "SQLitePCLRaw.provider.e_sqlite3",
+    "version": "3.0.5",
+    "sha256": "10c6d3daac432bb382dda06c35e5f7ffcce3618792141bd91656527f06ef5b25",
+    "url": "https://api.nuget.org/v3-flatcontainer/sqlitepclraw.provider.e_sqlite3/3.0.5/sqlitepclraw.provider.e_sqlite3.3.0.5.nupkg"
+  },
+  {
+    "pname": "SkiaSharp",
+    "version": "4.153.1",
+    "sha256": "9cf0fa681223d4956bfbd37995c9eaa8d259935ae3d195fac681ff9a4e9c4816",
+    "url": "https://api.nuget.org/v3-flatcontainer/skiasharp/4.153.1/skiasharp.4.153.1.nupkg"
+  },
+  {
+    "pname": "SkiaSharp.NativeAssets.Linux.NoDependencies",
+    "version": "4.153.1",
+    "sha256": "1678572dd5d1488c3f39892460bec16c2b0942489f3a5149abfbcbae3da53431",
+    "url": "https://api.nuget.org/v3-flatcontainer/skiasharp.nativeassets.linux.nodependencies/4.153.1/skiasharp.nativeassets.linux.nodependencies.4.153.1.nupkg"
+  },
+  {
+    "pname": "SkiaSharp.NativeAssets.Win32",
+    "version": "4.153.1",
+    "sha256": "c27b04338d1e4d400c20de534356310b9971e123e081c732af97e56f5572e1ae",
+    "url": "https://api.nuget.org/v3-flatcontainer/skiasharp.nativeassets.win32/4.153.1/skiasharp.nativeassets.win32.4.153.1.nupkg"
+  },
+  {
+    "pname": "SkiaSharp.NativeAssets.macOS",
+    "version": "4.153.1",
+    "sha256": "da8967494eb11d881494d0fd2562893174e92056d41c22c907b2a36caf1032c9",
+    "url": "https://api.nuget.org/v3-flatcontainer/skiasharp.nativeassets.macos/4.153.1/skiasharp.nativeassets.macos.4.153.1.nupkg"
+  }
+]

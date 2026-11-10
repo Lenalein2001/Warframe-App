@@ -82,7 +82,7 @@ public sealed class CatalogLoader(CachedJson cache)
     public static string Clean(string name)
     {
         name = Regex.Replace(Regex.Replace(name, "<[^>]*>", ""), @"\s+", " ").Trim();
-        return name.Any(char.IsLower) ? name : System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(name.ToLowerInvariant());
+        return name.Any(char.IsLower) ? name : string.Join(' ', name.Split(' ').Select(word => word.Length == 0 ? word : word[..1] + word[1..].ToLowerInvariant()));
     }
     public static void RepairRelics(IReadOnlyDictionary<string, JsonNode> raw)
     {

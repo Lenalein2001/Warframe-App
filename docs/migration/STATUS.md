@@ -1,6 +1,6 @@
 # C# replacement status
 
-Baseline: Rust fork `decc9b5` (0.9.0). The original Rust source and all 31 frontend files are retained unchanged. The compatibility manifest records 46 HTTP routes.
+Baseline: Rust fork `decc9b5` (0.9.0). All 31 frontend files are retained unchanged. The retired Rust source is available at the baseline commit and has been removed from the active checkout. The compatibility manifest records 46 HTTP routes.
 
 ## Implemented replacement
 

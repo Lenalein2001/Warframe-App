@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/companion/">
+    <Project Path="companion/App/App.csproj" />
+    <Project Path="companion/Core/Core.csproj" />
+    <Project Path="companion/Desktop/Desktop.csproj" />
+    <Project Path="companion/Host/Host.csproj" />
+    <Project Path="companion/Persistence/Persistence.csproj" />
+    <Project Path="companion/Services/Services.csproj" />
+    <Project Path="companion/Tests/Tests.csproj" />
+  </Folder>
+</Solution>

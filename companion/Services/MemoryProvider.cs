@@ -20,32 +20,53 @@ public static class MemoryProvider
     }
     public static MemoryCapture? Decode(ReadOnlySpan<byte> bytes, int marker, string account)
     {
-        var starts = new List<int>(); var first = 0; while (first < bytes.Length && char.IsWhiteSpace((char)bytes[first])) first++;
-        if (first < bytes.Length && bytes[first] == '{') starts.Add(first);
-        // A game allocation can lose its first fields. Recover only plausible top-level section starts.
-        var keys = InventoryParser.CountedKeys.Concat(InventoryParser.EquipmentKeys).Concat(["XPInfo", "LastInventorySync", "PendingRecipes", "Upgrades"]);
+        ReadOnlySpan<byte> needle = "\"LastInventorySync\""u8;
+        if (marker < 0 || marker > bytes.Length - needle.Length || !bytes.Slice(marker, needle.Length).SequenceEqual(needle)) return null;
+        var starts = new List<int>();
+        var first = 0;
+        while (first < bytes.Length && char.IsWhiteSpace((char)bytes[first])) first++;
+        if (first < bytes.Length && bytes[first] == ',') first++;
+        if (first <= marker) starts.Add(first);
+        var keys = InventoryParser.CountedKeys.Concat(InventoryParser.EquipmentKeys)
+            .Concat(["XPInfo", "LastInventorySync", "PendingRecipes", "Upgrades", "Affiliations", "DailyFocus", "Missions", "PlayerSkills"]);
         foreach (var key in keys)
         {
-            var needle = Encoding.UTF8.GetBytes("\"" + key + "\""); var at = bytes[..Math.Min(bytes.Length, marker)].IndexOf(needle);
+            var at = bytes[..(marker + needle.Length)].IndexOf(Encoding.UTF8.GetBytes("\"" + key + "\""));
             if (at >= 0) starts.Add(at);
         }
         foreach (var start in starts.Distinct().Order().Take(64))
         {
-            var addBrace = bytes[start] != '{'; var input = new byte[bytes.Length - start + (addBrace ? 1 : 0)]; if (addBrace) input[0] = (byte)'{'; bytes[start..].CopyTo(input.AsSpan(addBrace ? 1 : 0));
+            var addBrace = bytes[start] != '{';
+            var prefix = addBrace ? 1 : 0;
+            var input = new byte[bytes.Length - start + prefix];
+            if (addBrace) input[0] = (byte)'{';
+            bytes[start..].CopyTo(input.AsSpan(prefix));
             try
             {
                 var reader = new Utf8JsonReader(input, new JsonReaderOptions { MaxDepth = 64 });
-                if (!JsonDocument.TryParseValue(ref reader, out var doc) || reader.BytesConsumed <= marker - start) continue;
-                using (doc)
-                {
-                    var root = doc.RootElement;
-                    if (!root.TryGetProperty("LastInventorySync", out _) || !(root.TryGetProperty("MiscItems", out _) || root.TryGetProperty("Suits", out _))) continue;
-                    // Parser discards unknown fields; raw bytes and credentials never reach persistence or diagnostics.
-                    var parsed = InventoryParser.Parse(input.AsMemory(0, checked((int)reader.BytesConsumed)), account);
-                    return new(parsed with { Provider = "game memory" }, root.EnumerateObject().Select(p => p.Name).Where(n => InventoryParser.CountedKeys.Contains(n) || InventoryParser.EquipmentKeys.Contains(n) || n is "XPInfo" or "Upgrades" or "PendingRecipes").ToArray());
-                }
+                using var doc = JsonDocument.ParseValue(ref reader);
+                if (reader.BytesConsumed < marker - start + prefix + needle.Length) continue;
+                var root = doc.RootElement;
+                var structural = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("LastInventorySync", out _)
+                    && (root.TryGetProperty("MiscItems", out _) || root.TryGetProperty("Suits", out _));
+                // An intact object containing the hit must not be reinterpreted as a nested inventory.
+                if (!structural) { if (!addBrace) return null; continue; }
+                var tokens = new Utf8JsonReader(input.AsSpan(0, checked((int)reader.BytesConsumed)));
+                var topLevelHit = false;
+                while (tokens.Read())
+                    if (tokens.TokenStartIndex == marker - start + prefix)
+                    {
+                        topLevelHit = tokens.TokenType == JsonTokenType.PropertyName && tokens.CurrentDepth == 1 && tokens.ValueTextEquals("LastInventorySync");
+                        break;
+                    }
+                if (!topLevelHit) { if (!addBrace) return null; continue; }
+                // Only the allowlisted normalized snapshot crosses the persistence boundary.
+                var parsed = InventoryParser.Parse(input.AsMemory(0, checked((int)reader.BytesConsumed)), account);
+                var sections = root.EnumerateObject().Select(p => p.Name).Where(n => InventoryParser.CountedKeys.Contains(n)
+                    || InventoryParser.EquipmentKeys.Contains(n) || n is "XPInfo" or "Upgrades" or "PendingRecipes").ToArray();
+                return new(parsed with { Provider = "game memory" }, sections);
             }
-            catch (Exception e) when (e is JsonException or InventoryException) { }
+            catch (Exception error) when (error is JsonException or InventoryException) { }
         }
         return null;
     }

@@ -56,11 +56,22 @@ public static class ServiceTests
             var bytes = Encoding.UTF8.GetBytes("\"MiscItems\":[],\"Suits\":[],\"LastInventorySync\":100,\"Token\":\"private-test\"}trailing"); var marker = bytes.AsSpan().IndexOf("\"LastInventorySync\""u8);
             var capture = MemoryProvider.Decode(bytes, marker, "fixture")!; Equal(100.0, capture.Snapshot.SourceTimestamp); Equal(false, capture.Snapshot.Complete);
             Equal(false, System.Text.Json.JsonSerializer.Serialize(capture.Snapshot).Contains("private-test", StringComparison.Ordinal));
+            foreach (var invalid in new[] { "{\"Nested\":{\"MiscItems\":[],\"LastInventorySync\":123}}", "{\"MiscItems\":[],\"Nested\":{\"LastInventorySync\":123}}", "broken,\"MiscItems\":[],\"LastInventorySync\":123" })
+            {
+                var raw = Encoding.UTF8.GetBytes(invalid);
+                Equal<MemoryCapture?>(null, MemoryProvider.Decode(raw, raw.AsSpan().IndexOf("\"LastInventorySync\""u8), "fixture"));
+            }
+            var suffixed = Encoding.UTF8.GetBytes(",\"LastInventorySync\":123,\"MiscItems\":[]}");
+            Equal(123.0, MemoryProvider.Decode(suffixed, suffixed.AsSpan().IndexOf("\"LastInventorySync\""u8), "fixture")!.Snapshot.SourceTimestamp);
+            Equal<MemoryCapture?>(null, MemoryProvider.Decode(suffixed, -1, "fixture"));
         });
         test("Artwork rejects arbitrary URLs and path traversal", () =>
         {
             Equal(true, ArtService.Allowed("https://cdn.warframestat.us/img/test.png")); Equal(false, ArtService.Allowed("https://cdn.warframestat.us.evil.test/img/test.png"));
             Equal(false, ArtService.Allowed("https://browse.wf/Lotus/Interface/%2e%2e/private.png")); Equal(false, ArtService.Allowed("http://127.0.0.1/private.png"));
+            Equal("https://warframe.market/static/assets/sub_icons/warframe/generic_helmet_128x128.png", MarketService.SlotGlyph("Warframes", "/TenguHelmetComponent"));
+            Equal("https://warframe.market/static/assets/sub_icons/blueprint_128x128.png", MarketService.SlotGlyph("Warframes", "/IronframeBlueprint"));
+            Equal("Familial Debt-bond", CatalogLoader.Clean("FAMILIAL DEBT-BOND"));
             Equal(true, ArtService.AllowedRedirect("https://raw.githubusercontent.com/wfcd/warframe-items/master/data/img/GyrePrime.png"));
             Equal(false, ArtService.AllowedRedirect("https://raw.githubusercontent.com/other/repo/main/private.png"));
         });

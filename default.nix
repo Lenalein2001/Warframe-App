@@ -1,46 +1,39 @@
-# warframeproject as a Nix package.
-#
-#   nix-build                     # then ./result/bin/warframeproject
-#   nix-env -f . -i               # install into your profile (menu entry included)
-#
-# or in a NixOS configuration: environment.systemPackages = [ (pkgs.callPackage /path/to/checkout { }) ];
 { pkgs ? import <nixpkgs> { } }:
-let
-  runtime = import ./nix/runtime.nix { inherit pkgs; };
-  cargo = builtins.fromTOML (builtins.readFile ./Cargo.toml);
-in
-pkgs.rustPlatform.buildRustPackage {
-  pname = "warframeproject";
-  inherit (cargo.package) version;
-
-  # Only what the build reads: not build output or local results.
+let runtime = import ./nix/runtime.nix { inherit pkgs; };
+in pkgs.buildDotnetModule {
+  pname = "warframe-companion";
+  version = "0.1.0";
   src = pkgs.lib.cleanSourceWith {
-    src = pkgs.lib.cleanSource ./.;
-    filter = path: _type: !(builtins.elem (baseNameOf path) [ "target" "result" ]);
+    src = ./.;
+    filter = path: _type: !(builtins.elem (baseNameOf path) [ ".git" "artifacts" "bin" "obj" "build" "result" ]);
   };
-  cargoLock.lockFile = ./Cargo.lock;
-
-  nativeBuildInputs = with pkgs; [ pkg-config wrapGAppsHook3 ];
+  projectFile = "companion/Desktop/Desktop.csproj";
+  nugetDeps = ./nix/deps.json;
+  dotnet-sdk = pkgs.dotnetCorePackages.sdk_10_0;
+  dotnet-runtime = pkgs.dotnetCorePackages.aspnetcore_10_0;
+  useAppHost = false;
+  executables = [ "WarframeCompanion.Desktop" ];
+  dotnetFlags = [ "-p:RuntimeIdentifiers=linux-x64" ];
+  nativeBuildInputs = with pkgs; [ cmake pkg-config wrapGAppsHook3 ];
   buildInputs = runtime.libraries ++ [ pkgs.gsettings-desktop-schemas ];
-
-  # wrapGAppsHook3 sets up GSettings schemas and GIO modules (TLS for the item art); the tools the
-  # app runs go on its PATH. Compositor tools (hyprctl, swaymsg) come from the running system.
+  runtimeDeps = runtime.libraries;
+  dontUseCmakeConfigure = true;
+  preBuild = ''
+    cmake -S companion/Native -B companion/Native/build -DCMAKE_BUILD_TYPE=Release
+    cmake --build companion/Native/build --parallel "$NIX_BUILD_CORES"
+    ctest --test-dir companion/Native/build --output-on-failure
+  '';
   preFixup = ''
     gappsWrapperArgs+=(--prefix PATH : ${pkgs.lib.makeBinPath runtime.tools})
   '';
-
-  # The menu entry names the command, not its store path: docks and launchers copy the Exec line
-  # when the app is pinned, and a store path would keep starting the old build after every update.
   postInstall = ''
-    install -Dm644 warframeproject.desktop $out/share/applications/warframeproject.desktop
-    substituteInPlace $out/share/applications/warframeproject.desktop \
-      --replace-fail "Exec=/path/to/warframeproject/run.sh" "Exec=warframeproject"
+    install -Dm644 warframeproject.desktop $out/share/applications/warframe-companion.desktop
+    substituteInPlace $out/share/applications/warframe-companion.desktop --replace-fail "Exec=/path/to/warframeproject/run.sh" "Exec=WarframeCompanion.Desktop"
   '';
-
   meta = {
-    description = cargo.package.description;
-    mainProgram = "warframeproject";
+    description = "Warframe companion with C# services and native C/C++ processing";
+    mainProgram = "WarframeCompanion.Desktop";
     license = pkgs.lib.licenses.mit;
-    platforms = pkgs.lib.platforms.linux;
+    platforms = [ "x86_64-linux" ];
   };
 }

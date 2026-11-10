@@ -42,7 +42,8 @@ public sealed partial class GameView(Catalog catalog, InventorySnapshot? invento
         if (Catalog.Parts.TryGetValue(canon, out var part))
         {
             var slug = Market.Slug(canon, part.Slug, part.Name);
-            return Market.Item(slug)?.Image ?? part.Items.Select(Catalog.ImageFor).FirstOrDefault(i => i != null) ?? Catalog.ImageFor(uid);
+            return Market.Item(slug)?.Image ?? part.Items.Select(id => Catalog.Items.GetValueOrDefault(id)).OfType<GameItem>().Select(it => MarketService.SlotGlyph(it.Category, canon)).FirstOrDefault(i => i != null)
+                ?? part.Items.Select(Catalog.ImageFor).FirstOrDefault(i => i != null) ?? Catalog.ImageFor(uid);
         }
         return Catalog.ImageFor(uid);
     }
@@ -152,7 +153,9 @@ public sealed partial class GameView(Catalog catalog, InventorySnapshot? invento
             if (export.Name != null) return (export.Name, export.Kind, icon);
             if (export.Result is { } result) { var built = InventoryEntry(result, visiting); return (built.Name + " Blueprint", export.Kind, icon ?? built.Image); }
         }
-        return (Catalog.NameOf(uid), uid.Contains("/Upgrades/Mods/", StringComparison.Ordinal) ? "Mods" : uid.Contains("/Weapons/", StringComparison.Ordinal) ? "Weapons" : "Other", icon);
+        return (Catalog.NameOf(uid), uid.Contains("/Upgrades/Mods/", StringComparison.Ordinal) ? "Mods"
+            : uid.Contains("/Weapons/", StringComparison.Ordinal) || uid.Contains("/Powersuits/", StringComparison.Ordinal) ? "Weapons"
+            : new[] { "/Resources/", "/MiscItems/", "/Research/" }.Any(p => uid.Contains(p, StringComparison.Ordinal)) ? "Resources" : "Other", icon);
     }
     public JsonObject RelicRow(GameRelic relic, Dictionary<string, long>? needed = null)
     {
