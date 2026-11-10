@@ -49,7 +49,7 @@ Partial inventory observations cannot replace confirmed inventory. Older or unor
 ./tools/publish-companion.ps1 -Runtime win-x64 -TesseractRoot C:/path/to/complete/tesseract-bundle
 ```
 
-The OCR bundle must contain `tesseract.exe`, its DLLs, `tessdata/eng.traineddata`, and dependency licenses. `.github/bundle-tesseract.sh` creates this structure from MSYS2 and pins the compact English LSTM model by SHA-256. Packages include the desktop host, services, native libraries, embedded UI, and OCR bundle. `Portable.cmd` selects portable storage; launching the executable normally selects per-user storage. Framework-dependent packages require both .NET 10 and ASP.NET Core 10 runtimes. Self-contained packages include these runtimes; WebView2 is still an OS prerequisite.
+The OCR bundle must contain `tesseract.exe`, its DLLs, `tessdata/eng.traineddata`, and dependency licenses. `.github/bundle-tesseract.sh` creates this structure from MSYS2. Tesseract's own tool removes the unused legacy classifier while retaining the original English LSTM model and dictionaries; both the source and resulting file are pinned by SHA-256. Packages include the desktop host, services, native libraries, embedded UI, and OCR bundle. `Portable.cmd` selects portable storage; launching the executable normally selects per-user storage. Framework-dependent packages require both .NET 10 and ASP.NET Core 10 runtimes. Self-contained packages include these runtimes; WebView2 is still an OS prerequisite.
 
 Package output goes to a unique directory under `artifacts`. No account data is packaged. Do not infer desktop sizes from the older inventory-only CLI artifacts.
 

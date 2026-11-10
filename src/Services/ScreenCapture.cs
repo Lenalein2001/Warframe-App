@@ -58,7 +58,7 @@ public static class ScreenCapture
         using var scaled = prepared.Resize(new SKImageInfo(crop.Width * 2, crop.Height * 2), new SKSamplingOptions(SKCubicResampler.CatmullRom));
         var path = Path.Combine(Path.GetTempPath(), "warframe-ocr-" + Guid.NewGuid().ToString("N") + ".png");
         try { using (var image = SKImage.FromBitmap(scaled)) using (var data = image.Encode(SKEncodedImageFormat.Png, 100)) await File.WriteAllBytesAsync(path, data.ToArray(), cancellation);
-            return await Run(tesseract, [path, "stdout", "-l", "eng", "--psm", mode.ToString(System.Globalization.CultureInfo.InvariantCulture)], cancellation); }
+            return await Run(tesseract, [path, "stdout", "-l", "eng", "--oem", "1", "--psm", mode.ToString(System.Globalization.CultureInfo.InvariantCulture)], cancellation); }
         finally { if (File.Exists(path)) File.Delete(path); }
     }
     private static CapturedScreen Windows()

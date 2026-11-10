@@ -17,11 +17,20 @@ cp "$prefix/bin/tesseract.exe" "$dir/"
 ldd "$prefix/bin/tesseract.exe" | awk -v p="$prefix/" 'index($3, p) == 1 { print $3 }' | sort -u |
   while read -r dll; do cp "$dll" "$dir/"; done
 
-# Compact LSTM English model, pinned and checked byte for byte. Recognition is
-# regression-tested against synthetic reward/riven images and private reward fixtures.
-curl -fsSL -o "$dir/tessdata/eng.traineddata" \
-  https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/4.1.0/eng.traineddata
-echo "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2  $dir/tessdata/eng.traineddata" |
+# Keep the original LSTM model and dictionaries, without the unused legacy
+# classifier. Use Tesseract's own packer instead of maintaining a format writer.
+curl -fsSL -o "$work/original.traineddata" \
+  https://raw.githubusercontent.com/tesseract-ocr/tessdata/4.1.0/eng.traineddata
+echo "daa0c97d651c19fba3b25e81317cd697e9908c8208090c94c3905381c23fc047  $work/original.traineddata" |
+  sha256sum -c -
+components=(lstm lstm-punc-dawg lstm-word-dawg lstm-number-dawg lstm-unicharset lstm-recoder version)
+extract=()
+mkdir -p "$work/model"
+for component in "${components[@]}"; do extract+=("$work/model/eng.$component"); done
+"$prefix/bin/combine_tessdata.exe" -e "$work/original.traineddata" "${extract[@]}"
+"$prefix/bin/combine_tessdata.exe" "$work/model/eng."
+cp "$work/model/eng.traineddata" "$dir/tessdata/eng.traineddata"
+echo "906538558589e563fad743a10a7c4d4e041112c9d546b3f648ad42ad703e679f  $dir/tessdata/eng.traineddata" |
   sha256sum -c -
 cp -r "$prefix/share/tessdata/configs" "$dir/tessdata/"
 

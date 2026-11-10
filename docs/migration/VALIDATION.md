@@ -18,7 +18,7 @@ The Windows C#/C/C++ replacement has been exercised with the original interface,
 
 ## Package measurements
 
-The compact-model build at 21:21 measured 53,756,018 bytes installed / 23,862,862 bytes zipped for the framework-dependent edition, and 164,062,354 / 73,942,815 bytes for the self-contained edition. Both passed isolated package smoke checks. The pinned English model is 4,113,088 bytes instead of 23,466,654; the full suite with it passed 47/47 checks, including synthetic reward/riven recognition and the supplied reward screenshot. Later documentation and small metadata changes may alter package size slightly.
+The 21:33 build measured 54,842,532 bytes installed / 24,843,555 bytes zipped for the framework-dependent edition, and 165,148,868 / 74,923,508 bytes for the self-contained edition. Its English data is 5,199,090 bytes instead of 23,466,654: the original LSTM network, dictionaries, character map, recoder and version are retained byte-for-byte, while unused legacy-engine data is omitted. CI uses Tesseract's own extraction/packing utility and checks the resulting SHA-256. OCR explicitly selects the LSTM engine. The suite passed 47/47 checks with this data, including synthetic reward/riven recognition and the supplied screenshot. Later documentation changes may alter package size slightly.
 
 Crafting-use regression checks cover consumed weapon quantities, multi-step chains, duplicate recipe sources, mastered targets and missing recipe data. Against the loaded catalog, Lato → Bolto → Akbolto → Akjagara returned quantities 1, 2 and 1. JavaScript syntax and interface contracts passed. Desktop input was stopped with Escape before the new controls could be visually verified.
 
