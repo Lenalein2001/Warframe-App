@@ -13,3 +13,11 @@
 *.key
 *.ppm
 /frames/
+/companion/**/bin/
+/companion/**/obj/
+/artifacts/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+companion/Native/build/

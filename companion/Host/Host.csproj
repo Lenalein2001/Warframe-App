@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../Services/Services.csproj" />
+    <EmbeddedResource Include="../../web/**/*" LogicalName="web/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>WinExe</OutputType><AssemblyName>WarframeCompanion.Desktop</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Host/Host.csproj" />
+    <PackageReference Include="Photino.NET" Version="4.0.16" />
+  </ItemGroup>
+  <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
+    <Content Include="../Native/build/libwarframe_overlay.so" Link="libwarframe_overlay.so" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

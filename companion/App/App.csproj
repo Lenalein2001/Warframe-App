@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><AssemblyName>WarframeCompanion</AssemblyName></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../Persistence/Persistence.csproj" /></ItemGroup>
+</Project>
