@@ -20,6 +20,11 @@ static void memory_test() {
     const char* fixture = "{\"LastInventorySync\":123,\"MiscItems\":[],\"nativeFixture\":\"wfc-regression-7d91\"}";
     std::vector<std::uint8_t> allocation(std::strlen(fixture) + 2, 0);
     std::memcpy(allocation.data() + 1, fixture, std::strlen(fixture));
+#ifndef _WIN32
+    // The OS reader observes this allocation without a C++ pointer argument. Make its
+    // contents escape so optimizing compilers cannot elide or delay the fixture stores.
+    asm volatile("" : : "r"(allocation.data()) : "memory");
+#endif
     bool found = false;
     const auto candidate = [](const std::uint8_t* bytes, std::size_t size, std::size_t marker, void* context) -> int {
         const char expected[] = "wfc-regression-7d91";

@@ -10,6 +10,8 @@ namespace WarframeCompanion.Services;
 public sealed record MemoryCapture(InventorySnapshot Snapshot, string[] Sections);
 public static class MemoryProvider
 {
+    public static bool IsInventorySection(string name) => InventoryParser.CountedKeys.Contains(name)
+        || InventoryParser.EquipmentKeys.Contains(name) || name is "XPInfo" or "Upgrades" or "PendingRecipes";
     public static int? GamePid()
     {
         foreach (var process in Process.GetProcesses())
@@ -62,8 +64,7 @@ public static class MemoryProvider
                 if (!topLevelHit) { diagnostic?.Invoke("Inventory marker is nested rather than top-level."); if (!addBrace) return null; continue; }
                 // Only the allowlisted normalized snapshot crosses the persistence boundary.
                 var parsed = InventoryParser.Parse(input.AsMemory(0, checked((int)reader.BytesConsumed)), account);
-                var sections = root.EnumerateObject().Select(p => p.Name).Where(n => InventoryParser.CountedKeys.Contains(n)
-                    || InventoryParser.EquipmentKeys.Contains(n) || n is "XPInfo" or "Upgrades" or "PendingRecipes").ToArray();
+                var sections = root.EnumerateObject().Select(p => p.Name).Where(IsInventorySection).ToArray();
                 return new(parsed with { Provider = "game memory" }, sections);
             }
             catch (Exception error) when (error is JsonException or InventoryException)

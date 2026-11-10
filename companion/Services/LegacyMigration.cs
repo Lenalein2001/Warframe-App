@@ -28,6 +28,10 @@ public static class LegacyMigration
             var key = J.S(old, "key") ?? "legacy"; InventoryParser.ValidateAccount(key);
             var folder = raw == null ? data : Path.Combine(data, "accounts", key);
             var account = new AccountState { Key = key, Id = J.S(old, "id"), Name = J.S(old, "name"), Source = J.S(old, "source") ?? "saved", Seen = J.D(old?["seen"]) };
+            if (Read(Path.Combine(folder, "memscan_sections.json")) is { } learned && J.N(learned, "captures") >= 3)
+                account.ExpectedMemorySections = J.O(learned["seen"])
+                    .Where(p => MemoryProvider.IsInventorySection(p.Key) && J.N(p.Value) * 10 >= J.N(learned, "captures") * 9)
+                    .Select(p => p.Key).ToArray();
             if (old?["badge"] is JsonArray badge && badge.Count == 2) { account.Badge = J.D(badge[0]) is { } low ? (long)low : null; account.BadgeMax = J.D(badge[1]) is { } high ? (long)high : null; }
             if (old?["duviri"] is { } duviri) account.Duviri = J.Node(new { rolled = J.D(duviri["rolled"]), offers = duviri["picks"] });
             if (account.Id != null) InventoryParser.ValidateAccount(account.Id);

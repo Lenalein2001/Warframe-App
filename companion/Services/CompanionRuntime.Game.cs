@@ -113,17 +113,18 @@ public sealed partial class CompanionRuntime
     }
     private async Task CaptureMemory(int pid, CancellationToken cancellation)
     {
-        string key, identity; Dictionary<string, long> known;
+        string key, identity; Dictionary<string, long> known; string[] migratedSections;
         lock (sync)
         {
             var account = registry.Accounts.FirstOrDefault(a => a.Key == playingKey);
             if (account == null) { ScanError = "Waiting for the game log to identify the logged-in account."; return; }
             key = account.Key; identity = account.Id ?? key; known = account.Profile?.Xp ?? snapshots.Current(identity)?.Xp ?? [];
+            migratedSections = account.ExpectedMemorySections;
         }
         ScanRunning = true;
         try
         {
-            var baseline = store.Read<string[]>("memory-sections-" + key) ?? [];
+            var baseline = (store.Read<string[]>("memory-sections-" + key) ?? []).Union(migratedSections).ToArray();
             bool Accept(MemoryCapture reading) => (reading.Snapshot.IdentityVerified || LegacyMigration.SameOwner(reading.Snapshot.Xp, known) == true) && new[] { "MiscItems", "Suits", "Recipes", "XPInfo" }.Concat(baseline).All(reading.Sections.Contains);
             var capture = await Task.Run(() => MemoryProvider.Scan(pid, identity, cancellation, Accept), cancellation);
             var owns = capture.Snapshot.IdentityVerified || LegacyMigration.SameOwner(capture.Snapshot.Xp, known) == true;

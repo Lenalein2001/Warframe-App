@@ -30,6 +30,7 @@ public sealed class AccountState
     public long? BadgeMax { get; set; }
     public JsonNode? Duviri { get; set; }
     public List<AccountEvidence> Evidence { get; set; } = [];
+    public string[] ExpectedMemorySections { get; set; } = [];
 }
 
 public sealed class StateStore

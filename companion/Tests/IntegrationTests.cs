@@ -135,10 +135,12 @@ public static class IntegrationTests
             File.WriteAllText(Path.Combine(source, "accounts.json"), """{"active":"player_key","accounts":[{"key":"player_key","name":"Fixture","badge":[13,15]}]}""");
             var inventory = """{"counts":{"/Item_With_Underscores":7},"equipment":{},"xp":{"/Weapon_With_Underscores":900000},"progress":{"nodes":{},"intrinsics":{"LPS_PILOTING":5}},"imported":100,"synced_at":90,"mastery_rank":13}""";
             File.WriteAllText(Path.Combine(folder, "inventory.json"), inventory);
+            File.WriteAllText(Path.Combine(folder, "memscan_sections.json"), """{"captures":10,"seen":{"MiscItems":10,"Suits":9,"Upgrades":8,"privateField":10}}""");
             File.WriteAllText(Path.Combine(folder, "manual.json"), """{"counts":{"/Item_With_Underscores":[8,110]},"mastered":{},"pinned":["/Item_With_Underscores"],"tasks":[],"goals":["/Goal"]}""");
             var snapshots = new SnapshotStore(Path.Combine(directory, "snapshot.sqlite")); var migrated = LegacyMigration.Load(source, source, snapshots)!.Value;
             Check(migrated.Registry.Accounts.Single().Manual.Counts["/Item_With_Underscores"].Count == 8, "Manual count lost");
             Check(migrated.Registry.Accounts.Single().Manual.Tasks.Single().Uid == "/Goal", "Legacy goal lost");
+            Check(migrated.Registry.Accounts.Single().ExpectedMemorySections.SequenceEqual(new[] { "MiscItems", "Suits" }), "Learned inventory completeness was lost or unrecognized fields retained");
             var current = snapshots.Current("player_key")!; Check(current.Counts["/Item_With_Underscores"] == 7 && current.Progress!.Intrinsics["LPS_PILOTING"] == 5, "Identifiers changed");
             Check(File.ReadAllText(Path.Combine(folder, "inventory.json")) == inventory, "Migration changed source");
             var historyPath = Path.Combine(source, "rewards.jsonl"); File.WriteAllText(historyPath, "broken\n" + """{"t":100,"account":"player_key","drops":[{"name":"Part","uid":"/Part","price":12,"needed":true}],"private":"discard"}""" + "\n");
@@ -196,6 +198,35 @@ public static class IntegrationTests
     }
     public static void RegisterLiveMemory(Action<string, Action> test, string directory)
     {
+        test("Live game watcher commits a capture to an isolated account store", () => InDirectory(target =>
+        {
+            var source = new StateStore(Path.Combine(directory, "state.sqlite"));
+            var registry = source.Read<RegistryState>("registry") ?? throw new Exception("Known accounts are required.");
+            var state = new StateStore(Path.Combine(target, "state.sqlite"));
+            state.Write("registry", registry);
+            var settings = Settings.Defaults(); settings["memory_scan_enabled"] = true; settings["ocr_enabled"] = false;
+            state.Write("settings", settings);
+            var sourceSnapshots = new SnapshotStore(Path.Combine(directory, "companion.sqlite"));
+            var snapshots = new SnapshotStore(Path.Combine(target, "companion.sqlite"));
+            foreach (var account in registry.Accounts)
+                if (sourceSnapshots.Current(account.Id ?? account.Key) is { } saved) snapshots.Commit(saved);
+            var runtime = new CompanionRuntime(target, true);
+            try
+            {
+                runtime.Start();
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                while (watch.Elapsed < TimeSpan.FromSeconds(60))
+                {
+                    if (registry.Accounts.Any(a => snapshots.Current(a.Id ?? a.Key)?.Provider == "game memory")) break;
+                    if (runtime.ScanError != null) throw new Exception(runtime.ScanError);
+                    Thread.Sleep(250);
+                }
+                Check(registry.Accounts.Any(a => snapshots.Current(a.Id ?? a.Key) is { Provider: "game memory", Complete: true, IdentityVerified: true }), "Game watcher did not promote a verified capture.");
+                Check(snapshots.IntegrityCheck() == "ok", "Live capture damaged the isolated database.");
+                Console.WriteLine($"Live watcher saved verified inventory in {watch.Elapsed.TotalSeconds:F2} seconds; original application data was untouched.");
+            }
+            finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
         test("Live native game-memory capture identifies the expected account", () =>
         {
             var runtime = new CompanionRuntime(directory, true);
