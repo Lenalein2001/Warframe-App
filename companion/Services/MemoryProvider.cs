@@ -91,12 +91,15 @@ public static class MemoryProvider
     {
         MemoryCapture? best = null;
         Exception? callbackFailure = null;
+        var candidates = 0;
+        ulong scanned = 0;
         // Native callbacks are synchronous. Never allow a managed exception to cross the C ABI.
         CandidateCallback candidate = (pointer, size, marker, _) =>
         {
             try
             {
                 cancellation.ThrowIfCancellationRequested();
+                candidates++;
                 if (size > InventoryParser.MaxBytes || marker >= size) return 1;
                 var bytes = new byte[checked((int)size)];
                 Marshal.Copy(pointer, bytes, 0, bytes.Length);
@@ -106,7 +109,7 @@ public static class MemoryProvider
             }
             catch (Exception error) { callbackFailure = error; return 0; }
         };
-        ProgressCallback progress = (_, _) => cancellation.IsCancellationRequested ? 0 : 1;
+        ProgressCallback progress = (bytes, _) => { scanned = bytes; return cancellation.IsCancellationRequested ? 0 : 1; };
         var result = ScanNative(pid, candidate, progress, 0);
         GC.KeepAlive(candidate);
         GC.KeepAlive(progress);
@@ -117,7 +120,7 @@ public static class MemoryProvider
             : "The native memory scan failed; confirmed inventory was retained.");
         return best ?? throw new InventoryException(result == 2
             ? "No complete inventory found within the scan budget; retry after a game sync."
-            : "Inventory text is not available in game memory. Confirmed inventory was retained.");
+            : $"No usable inventory in {candidates} candidate buffers across {scanned / (1024 * 1024)} MiB. Confirmed inventory was retained.");
     }
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int CandidateCallback(nint bytes, nuint size, nuint marker, nint context);

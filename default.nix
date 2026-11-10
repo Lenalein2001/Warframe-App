@@ -14,7 +14,7 @@ in pkgs.buildDotnetModule {
   useAppHost = false;
   executables = [ "WarframeCompanion.Desktop" ];
   dotnetFlags = [ "-p:RuntimeIdentifiers=linux-x64" ];
-  nativeBuildInputs = with pkgs; [ cmake pkg-config wrapGAppsHook3 ];
+  nativeBuildInputs = with pkgs; [ gcc cmake pkg-config wrapGAppsHook3 ];
   buildInputs = runtime.libraries ++ [ pkgs.gsettings-desktop-schemas ];
   runtimeDeps = runtime.libraries;
   dontUseCmakeConfigure = true;

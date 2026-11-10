@@ -167,6 +167,9 @@ IntegrationTests.Register(Test);
 if (args.Contains("--ocr")) IntegrationTests.RegisterOcr(Test);
 string? Option(string key) { var index = Array.IndexOf(args, key); return index >= 0 && index + 1 < args.Length ? args[index + 1] : null; }
 if (Option("--reward-image") is { } rewardImage) IntegrationTests.RegisterRewardImage(Test, rewardImage, Option("--cache") ?? throw new ArgumentException("--cache is required"), Option("--expected-rewards")?.Split('|'));
+if (Option("--live-memory-directory") is { } liveDirectory) IntegrationTests.RegisterLiveMemory(Test, liveDirectory);
+if (Option("--filter") is { } filter) tests.RemoveAll(test => !test.Item1.Contains(filter, StringComparison.OrdinalIgnoreCase));
+if (tests.Count == 0) throw new ArgumentException("No tests matched the filter.");
 var failures = 0;
 try
 {

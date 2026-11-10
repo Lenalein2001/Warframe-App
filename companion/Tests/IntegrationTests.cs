@@ -194,6 +194,27 @@ public static class IntegrationTests
             if (expected != null) Check(recognized.SequenceEqual(expected), "Recognized rewards do not match expected slot order");
         });
     }
+    public static void RegisterLiveMemory(Action<string, Action> test, string directory)
+    {
+        test("Live native game-memory capture identifies the expected account", () =>
+        {
+            var runtime = new CompanionRuntime(directory, true);
+            try
+            {
+                var view = runtime.View();
+                var current = view.Inventory ?? throw new Exception("An isolated known inventory is required for ownership comparison.");
+                var pid = MemoryProvider.GamePid() ?? throw new Exception("Warframe is not running.");
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(55));
+                bool Accept(MemoryCapture capture) => (capture.Snapshot.IdentityVerified || LegacyMigration.SameOwner(capture.Snapshot.Xp, view.Profile?.Xp ?? current.Xp) == true)
+                    && new[] { "MiscItems", "Suits", "Recipes", "XPInfo" }.All(capture.Sections.Contains);
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                var result = MemoryProvider.Scan(pid, current.AccountId, deadline.Token, Accept);
+                Check(Accept(result), "Live capture lacks verified ownership or required inventory sections.");
+                Console.WriteLine($"Live capture: {result.Snapshot.Counts.Count} stacks, {result.Sections.Length} sections, {watch.Elapsed.TotalSeconds:F2} seconds; no capture was persisted.");
+            }
+            finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        });
+    }
     private static void InDirectory(Action<string> action)
     {
         var directory = Path.Combine(Path.GetTempPath(), "companion-integration-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);

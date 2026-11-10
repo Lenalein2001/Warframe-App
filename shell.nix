@@ -8,5 +8,7 @@ pkgs.mkShell {
   nativeBuildInputs = with pkgs; [ dotnetCorePackages.sdk_10_0 cmake gcc pkg-config ];
   buildInputs = runtime.libraries;
   packages = runtime.tools;
-  shellHook = runtime.environment;
+  shellHook = runtime.environment + ''
+    export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtime.libraries}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  '';
 }
