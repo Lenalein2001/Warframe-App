@@ -165,6 +165,8 @@ Test("Newer database schema fails closed", () =>
 ServiceTests.Register(Test);
 IntegrationTests.Register(Test);
 if (args.Contains("--ocr")) IntegrationTests.RegisterOcr(Test);
+string? Option(string key) { var index = Array.IndexOf(args, key); return index >= 0 && index + 1 < args.Length ? args[index + 1] : null; }
+if (Option("--reward-image") is { } rewardImage) IntegrationTests.RegisterRewardImage(Test, rewardImage, Option("--cache") ?? throw new ArgumentException("--cache is required"), Option("--expected-rewards")?.Split('|'));
 var failures = 0;
 try
 {

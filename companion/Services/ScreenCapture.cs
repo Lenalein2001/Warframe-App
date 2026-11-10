@@ -5,7 +5,7 @@ using WarframeCompanion.Core;
 
 namespace WarframeCompanion.Services;
 
-public sealed record CapturedScreen(SKBitmap Bitmap, int X, int Y) : IDisposable { public void Dispose() => Bitmap.Dispose(); }
+public sealed record CapturedScreen(SKBitmap Bitmap, int X, int Y, double CoordinateScale = 1) : IDisposable { public void Dispose() => Bitmap.Dispose(); }
 public static class ScreenCapture
 {
     public static string? Which(string name)
@@ -31,10 +31,12 @@ public static class ScreenCapture
         var tool = ScreenshotTool(setting) ?? throw new InventoryException("Install a screenshot tool such as grim or scrot."); var path = Path.Combine(Path.GetTempPath(), "warframe-frame-" + Guid.NewGuid().ToString("N") + ".png");
         try
         {
+            var bounds = tool == "grim" ? await LinuxCompositor.GameBounds(cancellation) : null;
             string[] args = tool switch { "grim" => [path], "spectacle" => ["-b", "-n", "-o", path], "gnome-screenshot" => ["-f", path], "maim" => [path], "scrot" => ["-o", path], "import" => ["-window", "root", path], _ => throw new InventoryException("Unknown screenshot tool.") };
+            if (tool == "grim") args = bounds is { } r ? ["-l", "0", "-g", $"{r.X},{r.Y} {r.Width}x{r.Height}", path] : ["-l", "0", path];
             await Run(Which(tool)!, args, cancellation); using var codec = SKCodec.Create(path);
             if (codec == null || (long)codec.Info.Width * codec.Info.Height > 40_000_000) throw new InventoryException("Screenshot is invalid or too large.");
-            return new(SKBitmap.Decode(codec) ?? throw new InventoryException("Screenshot could not be read."), 0, 0);
+            return new(SKBitmap.Decode(codec) ?? throw new InventoryException("Screenshot could not be read."), bounds?.X ?? 0, bounds?.Y ?? 0, bounds == null ? 1 : codec.Info.Width / (double)bounds.Width);
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }

@@ -5,8 +5,40 @@
 #include <stdexcept>
 #include <vector>
 #include <chrono>
+#include <cstring>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 static void check(bool ok) { if (!ok) throw std::runtime_error("native regression failed"); }
+static void memory_test() {
+    // Heap allocation exercises real OS reads without inspecting another application's data.
+    const char* fixture = "{\"LastInventorySync\":123,\"MiscItems\":[],\"nativeFixture\":\"wfc-regression-7d91\"}";
+    std::vector<std::uint8_t> allocation(std::strlen(fixture) + 2, 0);
+    std::memcpy(allocation.data() + 1, fixture, std::strlen(fixture));
+    bool found = false;
+    const auto candidate = [](const std::uint8_t* bytes, std::size_t size, std::size_t marker, void* context) -> int {
+        const char expected[] = "wfc-regression-7d91";
+        if (marker < size && wfc_find(bytes, size, reinterpret_cast<const std::uint8_t*>(expected), sizeof(expected) - 1) >= 0) {
+            *static_cast<bool*>(context) = true;
+            return 0;
+        }
+        return 1;
+    };
+    const auto progress = [](std::uint64_t, void*) -> int { return 1; };
+#ifdef _WIN32
+    const auto pid = static_cast<int>(GetCurrentProcessId());
+#else
+    const auto pid = static_cast<int>(getpid());
+#endif
+    check(wfc_scan_memory(pid, candidate, progress, &found) == 1 && found);
+    const auto cancel = [](std::uint64_t, void*) -> int { return 0; };
+    check(wfc_scan_memory(pid, candidate, cancel, &found) == 1);
+    check(wfc_scan_memory(-1, candidate, progress, &found) == -2);
+}
 int main() {
+    memory_test();
     check(wfc_abi_version() == 1);
     const std::uint8_t data[]{1,2,1,2,3}; const std::uint8_t needle[]{1,2,3};
     check(wfc_find(data, 5, needle, 3) == 2); check(wfc_find(data, 2, needle, 3) == -1); check(wfc_find(nullptr, 0, needle, 3) == -1);

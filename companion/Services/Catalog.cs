@@ -77,6 +77,7 @@ public sealed class Catalog
     public Dictionary<string, long> NodeXp { get; } = [];
     public JsonNode? Regions { get; set; }
     public JsonNode? SyndicateExport { get; set; }
+    public JsonNode? UpgradeExport { get; set; }
     public JsonNode? Dictionary { get; set; }
     public double? LoadedAt { get; set; }
     public DropIndex Drops { get; set; } = new();

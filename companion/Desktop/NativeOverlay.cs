@@ -17,6 +17,7 @@ internal sealed class NativeOverlay(PhotinoWindow parent, string url, string dir
     private void ShowOnUi(OverlayRequest request)
     {
         HideOnUi();
+        if (OperatingSystem.IsLinux() && request.CoordinateScale != 1) request = request with { Width = (int)Math.Round(request.Width / request.CoordinateScale), Height = (int)Math.Round(request.Height / request.CoordinateScale), Unit = request.Unit / request.CoordinateScale, CoordinateScale = 1 };
         var boxes = Boxes(request); var left = boxes.Min(b => b.X); var top = boxes.Min(b => b.Y); var right = boxes.Max(b => b.Right); var bottom = boxes.Max(b => b.Bottom);
         // One narrow window per overlay bounds keeps unrelated desktop areas outside the webview.
         var width = Math.Max(1, right - left); var height = Math.Max(1, bottom - top);

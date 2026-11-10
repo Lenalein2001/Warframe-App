@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(warframe_native LANGUAGES C CXX)
-add_library(warframe_native SHARED native.cpp vendor/lzma/LzmaDec.c)
+add_library(warframe_native SHARED native.cpp memory.cpp vendor/lzma/LzmaDec.c)
 target_compile_features(warframe_native PRIVATE cxx_std_20)
 if(MSVC)
   target_compile_options(warframe_native PRIVATE /W4 /WX /O2 /EHsc)

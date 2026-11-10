@@ -229,6 +229,9 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
                 return J.Node(new { ok = true, promoted = result.Promoted, message = result.Reason });
             case "inventory/clear": lock (sync) { if (Active is { } active) snapshots.ClearCurrent(active.Id ?? active.Key); } break;
             case "riven/grade": return RivenService.GradeBody(Catalog, body);
+            case "riven/read-fingerprint":
+                var directRiven = FingerprintRivenReader.Read(Catalog, body); directRiven["traded"] = Rivens.Traded(J.S(directRiven, "weapon")!);
+                lock (sync) riven = directRiven.DeepClone(); return directRiven;
             case "rewards/scan": return await ScanRewards(false, cancellation);
             case "riven/scan": return await ScanRiven(cancellation);
             case "overlay/test": await TestOverlay(cancellation); break;
@@ -279,6 +282,7 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
     {
         stop.Cancel(); if (background != null) { try { await background; } catch (OperationCanceledException) { } }
         if (gameLoop != null) { try { await gameLoop; } catch (OperationCanceledException) { } }
+        if (memoryScan != null) { try { await memoryScan; } catch (OperationCanceledException) { } }
         if (automaticOcr != null) { try { await automaticOcr; } catch (OperationCanceledException) { } }
         RewardScreenOpened -= StartAutomaticOcr; RewardScreenClosed -= CloseRewards;
         await Market.DisposeAsync(); Art.Dispose(); cache.Dispose(); profileClient.Dispose(); stop.Dispose(); reload.Dispose(); profileGate.Dispose();

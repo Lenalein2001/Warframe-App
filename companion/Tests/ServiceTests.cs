@@ -53,6 +53,8 @@ public static class ServiceTests
         {
             Equal(true, ArtService.Allowed("https://cdn.warframestat.us/img/test.png")); Equal(false, ArtService.Allowed("https://cdn.warframestat.us.evil.test/img/test.png"));
             Equal(false, ArtService.Allowed("https://browse.wf/Lotus/Interface/%2e%2e/private.png")); Equal(false, ArtService.Allowed("http://127.0.0.1/private.png"));
+            Equal(true, ArtService.AllowedRedirect("https://raw.githubusercontent.com/wfcd/warframe-items/master/data/img/GyrePrime.png"));
+            Equal(false, ArtService.AllowedRedirect("https://raw.githubusercontent.com/other/repo/main/private.png"));
         });
         test("Catalog resolves equipment components, aliases, relic rewards and Plexus", () =>
         {

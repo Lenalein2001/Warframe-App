@@ -28,3 +28,19 @@ This status is deliberately not a declaration of full parity. The following requ
 - Run performance measurements for startup, memory, capture latency and OCR under realistic workload. Native hot-path implementations alone do not demonstrate a performance improvement.
 
 The preserved interface remains the acceptance surface. An implemented route or passing fixture is not sufficient evidence that every original interaction works.
+
+## Requested follow-up after migration completion
+
+- Make `senpai` the default branch. First move the active `senpai/csharp-replacement` branch out of that Git ref namespace, then establish `senpai` and update the default branch and workflow references.
+- Remove obsolete PR branches after a final ancestry check. On 2026-11-10, the six remote `pr-*` branches each had zero commits absent from `origin/main`; none needs to be retained to preserve its changes.
+- Reduce desktop package size and test the reduced artifacts. The first measured package included an unnecessary 91.54 MiB `libSkiaSharp.pdb`; exclude dependency debug symbols from shipping packages. Measure OCR assets, native dependencies and bundled .NET separately, and evaluate optional OCR installation while retaining the fallback. Do not promise a final size before publishing and testing.
+- Keep package directories separate from runtime/test data. GUI launch testing showed that a relative `--data-dir` can resolve inside the executable directory; use absolute test data paths and verify archive contents before release.
+
+## Latest validation checkpoint
+
+- Process-memory enumeration, read-only access, bounded buffers and scanning now live in C++ on Windows and Linux. C# retains JSON validation, account ownership and snapshot promotion. Native tests read a heap fixture from their own process and verify cancellation; this does not establish successful Warframe inventory capture.
+- Background memory scans no longer block game-log polling. UTF-8 log tails preserve split characters and suppress historical reward events.
+- An explicit-data riven fingerprint API decodes rolls without OCR using current export definitions. Automatic selection of a hovered riven from game memory is not implemented.
+- Windows native tests and 41 managed/integration/image tests passed, including all four exact reward names in the supplied external screenshot. The screenshot is not included in the repository.
+- Release publishing excludes dependency PDB files. A framework-dependent runtime-only publish measured 17,789,461 bytes in 19 files, with no PDBs. This excludes OCR, licenses and the shared .NET runtime; it is not the final distribution size.
+- Linux capture geometry and overlay coordinate handling have additional changes awaiting CI and compositor runtime verification.

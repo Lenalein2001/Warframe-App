@@ -17,6 +17,8 @@ public sealed class GameLog
     private DateTime creation;
     private long historicalUntil;
     private DateTimeOffset? logStarted;
+    private readonly Decoder decoder = Encoding.UTF8.GetDecoder();
+    private bool skipPartialLine;
     public event Action<LogSignal>? Signal;
     public static string StripGlyphs(string text) => new(text.Where(c => c is < '\ue000' or > '\uf8ff').ToArray());
     public static IEnumerable<LogSignal> Parse(string line)
@@ -53,13 +55,18 @@ public sealed class GameLog
         var path = string.IsNullOrWhiteSpace(configured) ? Discover() : configured;
         Active = false; if (path == null || !File.Exists(path)) return;
         var info = new FileInfo(path); var first = path != Path || info.Length < offset || info.CreationTimeUtc != creation;
-        if (first) { Path = path; creation = info.CreationTimeUtc; offset = Math.Max(0, info.Length - 8 * 1024 * 1024); historicalUntil = info.Length; pending = ""; Player = null; AccountId = null; logStarted = null; }
+        if (first) { Path = path; creation = info.CreationTimeUtc; offset = Math.Max(0, info.Length - 64 * 1024 * 1024); historicalUntil = info.Length; pending = ""; Player = null; AccountId = null; logStarted = null; decoder.Reset(); skipPartialLine = offset > 0; }
         var historical = offset < historicalUntil;
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete); stream.Seek(offset, SeekOrigin.Begin);
-        var bytes = new byte[(int)Math.Min(1024 * 1024, stream.Length - offset)]; var count = stream.Read(bytes); offset += count;
-        var lines = (pending + Encoding.UTF8.GetString(bytes, 0, count)).Split('\n'); pending = lines[^1].Length <= 65536 ? lines[^1] : "";
+        // Do not mix historical and newly appended events in one batch.
+        var available = (historical ? Math.Min(historicalUntil, stream.Length) : stream.Length) - offset;
+        var bytes = new byte[(int)Math.Min(8 * 1024 * 1024, available)]; var count = stream.Read(bytes); offset += count;
+        var chars = new char[Encoding.UTF8.GetMaxCharCount(count)];
+        var decoded = decoder.GetChars(bytes, 0, count, chars, 0, false);
+        var lines = (pending + new string(chars, 0, decoded)).Split('\n'); pending = lines[^1].Length <= 65536 ? lines[^1] : "";
         foreach (var line in lines.SkipLast(1))
         {
+            if (skipPartialLine) { skipPartialLine = false; continue; }
             var header = Regex.Match(line, @"\[UTC:\s*(.*?)\]");
             if (header.Success && DateTimeOffset.TryParseExact(Regex.Replace(header.Groups[1].Value, @"\s+", " "), ["ddd MMM d HH:mm:ss yyyy", "ddd MMM dd HH:mm:ss yyyy"], CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var began)) logStarted = began;
             var prefix = Regex.Match(line, @"^\s*(\d+(?:\.\d+)?)");

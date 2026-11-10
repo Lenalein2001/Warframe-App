@@ -11,6 +11,7 @@ public sealed partial class CompanionRuntime
     public bool ScanRunning { get; private set; }
     public string? ScanError { get; private set; }
     private Task? gameLoop;
+    private Task? memoryScan;
     private double nextMemory;
     private double lastMemory;
     private double nextAutoProfile;
@@ -66,8 +67,12 @@ public sealed partial class CompanionRuntime
                         await Post("inventory/import", body, stop.Token); watchedInventory = stamp;
                     }
                 }
-                if (J.B(config["memory_scan_enabled"]) && GameProcess is { } pid && (memoryRequested || J.Now >= nextMemory) && J.Now >= lastMemory + 10)
-                { memoryRequested = false; lastMemory = J.Now; nextMemory = J.Now + 300; await CaptureMemory(pid, stop.Token); }
+                if (J.B(config["memory_scan_enabled"]) && GameProcess is { } pid && (memoryScan == null || memoryScan.IsCompleted) && (memoryRequested || J.Now >= nextMemory) && J.Now >= lastMemory + 10)
+                {
+                    if (memoryScan != null) await memoryScan;
+                    memoryRequested = false; lastMemory = J.Now; nextMemory = J.Now + 300;
+                    memoryScan = CaptureMemory(pid, stop.Token);
+                }
                 if (!Offline && J.B(config["profile_auto_refresh"]) && J.Now >= nextAutoProfile)
                 {
                     nextAutoProfile = J.Now + Math.Max(1, J.N(config, "profile_refresh_minutes", 30)) * 60;

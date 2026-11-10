@@ -4,7 +4,7 @@ using WarframeCompanion.Core;
 
 namespace WarframeCompanion.Services;
 
-public sealed record OverlayRequest(string Kind, JsonNode Result, int X, int Y, int Width, int Height, double Unit, int Seconds, bool Above, string Backend = "auto");
+public sealed record OverlayRequest(string Kind, JsonNode Result, int X, int Y, int Width, int Height, double Unit, int Seconds, bool Above, string Backend = "auto", double CoordinateScale = 1);
 public sealed partial class CompanionRuntime
 {
     private readonly SemaphoreSlim ocrGate = new(1);
@@ -63,7 +63,7 @@ public sealed partial class CompanionRuntime
             {
                 lock (sync) History.Record(result, playingKey ?? registry.Active);
                 if (J.B(config["notify"])) Notify("reward:" + J.D(result["t"]), "Relic rewards", string.Join(" · ", items.Select(i => J.S(i, "name") + (J.Get(i, "price") != null ? " " + J.N(i, "price") + "p" : ""))));
-                if (J.B(config["overlay_enabled"])) OverlayRequested?.Invoke(new("rewards", result.DeepClone(), screen.X, screen.Y, screen.Bitmap.Width, screen.Bitmap.Height, unit, (int)J.N(config, "overlay_seconds", 15), J.S(config, "overlay_position") == "above", J.S(config, "overlay_backend") ?? "auto"));
+                if (J.B(config["overlay_enabled"])) OverlayRequested?.Invoke(new("rewards", result.DeepClone(), screen.X, screen.Y, screen.Bitmap.Width, screen.Bitmap.Height, unit, (int)J.N(config, "overlay_seconds", 15), J.S(config, "overlay_position") == "above", J.S(config, "overlay_backend") ?? "auto", screen.CoordinateScale));
                 var accountKey = playingKey ?? registry.Active;
                 for (var attempt = 0; attempt < 8 && !Offline && generation == Interlocked.Read(ref rewardGeneration); attempt++)
                 {
@@ -100,7 +100,7 @@ public sealed partial class CompanionRuntime
             var result = J.Node(new { t = J.Now, weapon = weapon.Name, image = Catalog.ImageUrl(weapon.Image), positives = pos, negatives = neg, unread, stats = graded,
                 overall = graded.Length > 0 && graded.All(g => !g.OutOfRange && !g.SignConflict) ? RivenService.Grade(graded.Average(g => g.Deviation)) : null, traded = Rivens.Traded(weapon.Name), market = (object?)null, marketError = (string?)null, ocr = raw, error = (string?)null });
             lock (sync) riven = result.DeepClone();
-            if (J.B(config["riven_overlay_enabled"])) OverlayRequested?.Invoke(new("riven", result.DeepClone(), frame.X, frame.Y, frame.Bitmap.Width, frame.Bitmap.Height, unit, (int)J.N(config, "riven_overlay_seconds", 20), false, J.S(config, "overlay_backend") ?? "auto"));
+            if (J.B(config["riven_overlay_enabled"])) OverlayRequested?.Invoke(new("riven", result.DeepClone(), frame.X, frame.Y, frame.Bitmap.Width, frame.Bitmap.Height, unit, (int)J.N(config, "riven_overlay_seconds", 20), false, J.S(config, "overlay_backend") ?? "auto", frame.CoordinateScale));
             if (!Offline)
             {
                 try { result["market"] = await Market.RivenListings(weapon, graded.Where(g => !g.Negative).Select(g => g.Stat), cancellation); }
@@ -119,6 +119,6 @@ public sealed partial class CompanionRuntime
         if (!Desktop || OverlayRequested == null) throw new InventoryException("Open the desktop app to show an overlay.");
         using var screen = await ScreenCapture.Capture(J.S(GetSettings(), "screenshot_tool") ?? "auto", cancellation);
         var result = J.Node(new { cards = 4, best = "Ash Prime Systems Blueprint", items = new[] { new { slot = 0, name = "Ash Prime Systems Blueprint", price = 25, ducats = 65, have = 0, needed = 1 }, new { slot = 1, name = "Braton Prime Barrel", price = 4, ducats = 15, have = 2, needed = 0 }, new { slot = 2, name = "Forma Blueprint", price = 0, ducats = 0, have = 3, needed = 0 }, new { slot = 3, name = "Fragor Prime Head", price = 6, ducats = 45, have = 0, needed = 1 } } });
-        OverlayRequested.Invoke(new("rewards", result, screen.X, screen.Y, screen.Bitmap.Width, screen.Bitmap.Height, Math.Min(screen.Bitmap.Width / 1920.0, screen.Bitmap.Height / 1080.0) * (Log.Scale ?? 1), 15, J.S(GetSettings(), "overlay_position") == "above", J.S(GetSettings(), "overlay_backend") ?? "auto"));
+        OverlayRequested.Invoke(new("rewards", result, screen.X, screen.Y, screen.Bitmap.Width, screen.Bitmap.Height, Math.Min(screen.Bitmap.Width / 1920.0, screen.Bitmap.Height / 1080.0) * (Log.Scale ?? 1), 15, J.S(GetSettings(), "overlay_position") == "above", J.S(GetSettings(), "overlay_backend") ?? "auto", screen.CoordinateScale));
     }
 }

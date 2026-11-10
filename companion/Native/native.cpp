@@ -126,16 +126,15 @@ struct Frame {
 int wfc_reward_layout(const std::uint8_t* pixels, int w, int h, int stride, double configured, double* scale) noexcept {
     if (!valid(pixels, w, h, stride) || !scale || !std::isfinite(configured)) return -1;
     try {
-        Frame frame{pixels, w, h, stride}; std::array<double, 16> scales{1, .95, 1.05, .9, 1.1, .85, 1.15, .8, 1.2, .75, 1.25, .7, .65, .6, .55, .5};
-        if (configured > 0) { if (configured < .3 || configured > 2) return -1; scales.fill(configured); }
+        Frame frame{pixels, w, h, stride}; std::vector<double> scales{1, .95, 1.05, .9, 1.1, .85, 1.15, .8, 1.2, .75, 1.25, .7, .65, .6, .55, .5};
+        if (configured > 0) { if (configured < .3 || configured > 2) return -1; std::erase(scales, configured); scales.insert(scales.begin(), configured); }
         for (auto s : scales) {
             auto u = std::min(w / 1920.0, h / 1080.0) * s; auto c = 242 * u; auto mid = w / 2.0;
             auto seen = [&](double from) { return frame.bar(u, mid + from * c, mid + (from + 1) * c).first >= .6; };
             int cards = seen(-2) || seen(1) ? 4 : seen(-1.5) || seen(.5) ? 3 : seen(-1) || seen(0) ? 2 : seen(-.5) ? 1 : 0;
-            if (!cards) { if (configured > 0) break; continue; }
+            if (!cards) continue;
             auto left = mid - cards * c / 2; auto row = frame.bar(u, left, left + cards * c).second;
             if (row >= 0 && frame.edges(row, left, c, cards)) { *scale = s; return cards; }
-            if (configured > 0) break;
         }
         return 0;
     } catch (...) { return -1; }

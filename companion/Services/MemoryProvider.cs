@@ -1,10 +1,8 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Microsoft.Win32.SafeHandles;
 using WarframeCompanion.Core;
 
 namespace WarframeCompanion.Services;
@@ -12,12 +10,11 @@ namespace WarframeCompanion.Services;
 public sealed record MemoryCapture(InventorySnapshot Snapshot, string[] Sections);
 public static class MemoryProvider
 {
-    private static readonly byte[] Marker = "\"LastInventorySync\""u8.ToArray();
     public static int? GamePid()
     {
         foreach (var process in Process.GetProcesses())
         {
-            using (process) try { if (process.ProcessName.Equals("Warframe.x64", StringComparison.OrdinalIgnoreCase) || process.ProcessName.Equals("Warframe.x64.exe", StringComparison.OrdinalIgnoreCase)) return process.Id; } catch (InvalidOperationException) { }
+            using (process) try { if (process.ProcessName.Equals("Warframe.x64", StringComparison.OrdinalIgnoreCase) || process.ProcessName.Equals("Warframe.x64.exe", StringComparison.OrdinalIgnoreCase) || OperatingSystem.IsLinux() && process.ProcessName.Equals("Warframe.x64.ex", StringComparison.OrdinalIgnoreCase)) return process.Id; } catch (InvalidOperationException) { }
         }
         return null;
     }
@@ -71,70 +68,40 @@ public static class MemoryProvider
     }
     public static MemoryCapture Scan(int pid, string account, CancellationToken cancellation, Func<MemoryCapture, bool>? acceptable = null)
     {
-        using var process = new Reader(pid); var watch = Stopwatch.StartNew(); var buffer = new byte[4 * 1024 * 1024 + Marker.Length]; MemoryCapture? best = null; long scanned = 0;
-        foreach (var (start, length) in JoinRegions(process.Regions()))
+        MemoryCapture? best = null;
+        Exception? callbackFailure = null;
+        // Native callbacks are synchronous. Never allow a managed exception to cross the C ABI.
+        CandidateCallback candidate = (pointer, size, marker, _) =>
         {
-            for (long cursor = start; cursor < start + length;)
+            try
             {
-                cancellation.ThrowIfCancellationRequested(); if (watch.Elapsed > TimeSpan.FromSeconds(45) || scanned > 32L * 1024 * 1024 * 1024) return best ?? throw new InventoryException("No complete inventory found within the scan budget; retry after a game sync.");
-                var wanted = (int)Math.Min(buffer.Length, start + length - cursor); var read = process.Read(cursor, buffer, wanted);
-                if (read == 0) { cursor += 4096; continue; } scanned += read;
-                var offset = 0;
-                while (offset < read && NativeEngine.Find(buffer, read, Marker, offset) is var hit && hit >= 0)
-                {
-                    hit += offset; var address = cursor + hit; var begin = Math.Max(start, address - 8 * 1024 * 1024); var extent = (int)Math.Min(InventoryParser.MaxBytes, start + length - begin);
-                    var blob = new byte[extent]; var got = process.Read(begin, blob, extent); var marker = (int)(address - begin);
-                    if (got > marker)
-                    {
-                        var before = blob.AsSpan(0, marker).LastIndexOf((byte)0); var after = blob.AsSpan(marker, got - marker).IndexOf((byte)0); var stop = after < 0 ? got : marker + after;
-                        var capture = Decode(blob.AsSpan(before + 1, stop - before - 1), marker - before - 1, account);
-                        if (capture != null) best = Prefer(best, capture, acceptable);
-                    }
-                    offset = hit + Marker.Length;
-                }
-                cursor += Math.Max(4096, read - Marker.Length);
+                cancellation.ThrowIfCancellationRequested();
+                if (size > InventoryParser.MaxBytes || marker >= size) return 1;
+                var bytes = new byte[checked((int)size)];
+                Marshal.Copy(pointer, bytes, 0, bytes.Length);
+                var capture = Decode(bytes, checked((int)marker), account);
+                if (capture != null) best = Prefer(best, capture, acceptable);
+                return 1;
             }
-        }
-        return best ?? throw new InventoryException("Inventory text is not available in game memory. Confirmed inventory was retained.");
+            catch (Exception error) { callbackFailure = error; return 0; }
+        };
+        ProgressCallback progress = (_, _) => cancellation.IsCancellationRequested ? 0 : 1;
+        var result = ScanNative(pid, candidate, progress, 0);
+        GC.KeepAlive(candidate);
+        GC.KeepAlive(progress);
+        cancellation.ThrowIfCancellationRequested();
+        if (callbackFailure != null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(callbackFailure).Throw();
+        if (result < 0) throw new InventoryException(result == -1
+            ? "The operating system denied read-only game memory access."
+            : "The native memory scan failed; confirmed inventory was retained.");
+        return best ?? throw new InventoryException(result == 2
+            ? "No complete inventory found within the scan budget; retry after a game sync."
+            : "Inventory text is not available in game memory. Confirmed inventory was retained.");
     }
-    private sealed class Reader : IDisposable
-    {
-        private readonly SafeProcessHandle? handle;
-        private readonly FileStream? stream;
-        private readonly int pid;
-        public Reader(int pid)
-        {
-            this.pid = pid;
-            if (OperatingSystem.IsWindows()) { handle = OpenProcess(0x410, false, pid); if (handle.IsInvalid) { handle.Dispose(); throw new InventoryException("Windows denied read-only access to Warframe."); } }
-            else try { stream = new FileStream($"/proc/{pid}/mem", FileMode.Open, FileAccess.Read, FileShare.ReadWrite); } catch (UnauthorizedAccessException) { throw new InventoryException("The operating system denied read-only game memory access."); }
-        }
-        public IEnumerable<(long Start, long Length)> Regions()
-        {
-            if (handle != null)
-            {
-                long address = 0;
-                while (VirtualQueryEx(handle, (nint)address, out var info, (nuint)Marshal.SizeOf<MemoryInfo>()) != 0)
-                {
-                    var start = info.BaseAddress.ToInt64(); var length = checked((long)info.RegionSize); if (length <= 0 || start > long.MaxValue - length) yield break;
-                    if (info.State == 0x1000 && info.Type == 0x20000 && (info.Protect & 0x104) == 4) yield return (start, length);
-                    address = start + length;
-                }
-            }
-            else foreach (var line in File.ReadLines($"/proc/{pid}/maps"))
-            {
-                var columns = line.Split(' ', StringSplitOptions.RemoveEmptyEntries); if (columns.Length < 2 || !columns[1].StartsWith("rw", StringComparison.Ordinal) || line.Contains("/dev/", StringComparison.Ordinal) || line.Contains(".dll", StringComparison.OrdinalIgnoreCase) || line.Contains(".so", StringComparison.OrdinalIgnoreCase) || line.Contains(".exe", StringComparison.OrdinalIgnoreCase)) continue;
-                var range = columns[0].Split('-'); var start = long.Parse(range[0], NumberStyles.HexNumber, CultureInfo.InvariantCulture); var end = long.Parse(range[1], NumberStyles.HexNumber, CultureInfo.InvariantCulture); yield return (start, end - start);
-            }
-        }
-        public int Read(long address, byte[] buffer, int count)
-        {
-            if (handle != null) { ReadProcessMemory(handle, (nint)address, buffer, (nuint)count, out var read); return checked((int)read); }
-            try { stream!.Position = address; return stream.Read(buffer, 0, count); } catch (IOException) { return 0; }
-        }
-        public void Dispose() { handle?.Dispose(); stream?.Dispose(); }
-    }
-    [StructLayout(LayoutKind.Sequential)] private struct MemoryInfo { public nint BaseAddress, AllocationBase; public uint AllocationProtect; public ushort PartitionId; public nuint RegionSize; public uint State, Protect, Type; }
-    [DllImport("kernel32.dll", SetLastError = true)] private static extern SafeProcessHandle OpenProcess(uint access, bool inherit, int pid);
-    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool ReadProcessMemory(SafeProcessHandle process, nint address, byte[] buffer, nuint count, out nuint read);
-    [DllImport("kernel32.dll")] private static extern nuint VirtualQueryEx(SafeProcessHandle process, nint address, out MemoryInfo info, nuint size);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int CandidateCallback(nint bytes, nuint size, nuint marker, nint context);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int ProgressCallback(ulong scanned, nint context);
+    [DllImport("warframe_native", EntryPoint = "wfc_scan_memory", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int ScanNative(int pid, CandidateCallback candidate, ProgressCallback progress, nint context);
 }

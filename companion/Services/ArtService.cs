@@ -13,6 +13,20 @@ public sealed class ArtService(string directory, bool offline) : IDisposable
     private readonly ConcurrentDictionary<string, double> failed = new();
     public static bool Allowed(string url) => Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme == "https" && u.IsDefaultPort && u.UserInfo.Length == 0 && !Uri.UnescapeDataString(url).Contains("..", StringComparison.Ordinal) &&
         (u.Host == "cdn.warframestat.us" && u.AbsolutePath.StartsWith("/img/", StringComparison.Ordinal) || u.Host == "warframe.market" && u.AbsolutePath.StartsWith("/static/assets/", StringComparison.Ordinal) || u.Host == "browse.wf" && u.AbsolutePath.StartsWith("/Lotus/Interface/", StringComparison.Ordinal));
+    public static bool AllowedRedirect(string url) => Allowed(url) || Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme == "https" && u.IsDefaultPort && u.UserInfo.Length == 0 && u.Host == "raw.githubusercontent.com" && u.AbsolutePath.StartsWith("/wfcd/warframe-items/master/data/img/", StringComparison.OrdinalIgnoreCase) && !Uri.UnescapeDataString(url).Contains("..", StringComparison.Ordinal);
+    private async Task<HttpResponseMessage> Download(string url, CancellationToken cancellation)
+    {
+        for (var hops = 0; hops < 4; hops++)
+        {
+            var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellation);
+            if ((int)response.StatusCode is not (301 or 302 or 303 or 307 or 308)) return response;
+            var location = response.Headers.Location; response.Dispose();
+            if (location == null) throw new IOException("Artwork redirect has no destination.");
+            url = new Uri(new Uri(url), location).AbsoluteUri;
+            if (!AllowedRedirect(url)) throw new IOException("Artwork redirect is outside trusted sources.");
+        }
+        throw new IOException("Artwork redirect limit exceeded.");
+    }
     public async Task<byte[]> Get(string url, int size, CancellationToken cancellation)
     {
         if (!Allowed(url)) throw new InventoryException("Unknown artwork source.");
@@ -25,7 +39,7 @@ public sealed class ArtService(string directory, bool offline) : IDisposable
             if (offline || failed.TryGetValue(url, out var time) && J.Now - time < 600) return old ?? throw new IOException("Artwork unavailable offline.");
             try
             {
-                using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellation); response.EnsureSuccessStatusCode();
+                using var response = await Download(url, cancellation); response.EnsureSuccessStatusCode();
                 if (response.Content.Headers.ContentLength > 8 * 1024 * 1024) throw new IOException("Artwork exceeds limit.");
                 await using var stream = await response.Content.ReadAsStreamAsync(cancellation); using var bytes = new MemoryStream(); var buffer = new byte[16384];
                 int read; while ((read = await stream.ReadAsync(buffer, cancellation)) > 0) { if (bytes.Length + read > 8 * 1024 * 1024) throw new IOException("Artwork exceeds limit."); bytes.Write(buffer, 0, read); }

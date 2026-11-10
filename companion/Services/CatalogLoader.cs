@@ -54,6 +54,7 @@ public sealed class CatalogLoader(CachedJson cache)
         var cat = Catalog.Build(ordered);
         cat.Dictionary = raw.GetValueOrDefault("dict.en"); cat.Regions = raw.GetValueOrDefault("ExportRegions"); cat.SyndicateExport = raw.GetValueOrDefault("ExportSyndicates");
         foreach (var (tag, node) in J.O(cat.Regions)) if (J.N(node, "masteryExp") > 0) cat.NodeXp[tag] = J.N(node, "masteryExp");
+        cat.UpgradeExport = raw.GetValueOrDefault("ExportUpgrades");
         foreach (var file in InventoryExports)
             foreach (var (uid, entry) in J.O(raw.GetValueOrDefault(file)))
             {

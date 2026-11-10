@@ -12,6 +12,51 @@ public static class IntegrationTests
     private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
     public static void Register(Action<string, Action> test)
     {
+        test("Log tail preserves split UTF-8 and suppresses historical reward events", () =>
+        {
+            var directory = Path.Combine(Path.GetTempPath(), "wfc-log-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            try
+            {
+                var path = Path.Combine(directory, "EE.log");
+                File.WriteAllText(path, "OpenVoidProjectionRewardScreen\n");
+                var log = new GameLog(); var signals = new List<LogSignal>(); log.Signal += signals.Add;
+                log.Poll(path);
+                Check(signals.Count == 0, "Historical reward screen was replayed");
+                var login = Encoding.UTF8.GetBytes("Sys [Info]: Logged in Renée\n");
+                var split = Array.IndexOf(login, (byte)0xc3) + 1;
+                using (var append = new FileStream(path, FileMode.Append)) append.Write(login.AsSpan(0, split));
+                log.Poll(path);
+                Check(signals.Count == 0, "Incomplete line emitted a login");
+                using (var append = new FileStream(path, FileMode.Append)) append.Write(login.AsSpan(split));
+                log.Poll(path);
+                Check(signals.Single().Value == "Renée", "Split UTF-8 player name was corrupted");
+                File.AppendAllText(path, "OpenVoidProjectionRewardScreen\n"); log.Poll(path);
+                Check(signals.Last().Kind == "rewards", "New reward screen was suppressed");
+            }
+            finally { Directory.Delete(directory, true); }
+        });
+        test("Compositor geometry preserves negative monitor origins and nested Sway windows", () =>
+        {
+            var hypr = JsonNode.Parse("""[{"class":"steam_app_230410","title":"Game","at":[-1920,80],"size":[1920,1080]}]""")!;
+            Check(LinuxCompositor.Hyprland(hypr) == new GameRectangle(-1920, 80, 1920, 1080), "Hyprland geometry changed");
+            var sway = JsonNode.Parse("""{"nodes":[{"floating_nodes":[{"name":"Warframe","rect":{"x":200,"y":30,"width":1280,"height":720}}]}]}""")!;
+            Check(LinuxCompositor.Sway(sway) == new GameRectangle(200, 30, 1280, 720), "Sway geometry missing");
+        });
+        test("Non-OCR riven reader decodes integer rolls using current export definitions", () =>
+        {
+            const string type = "/Lotus/Upgrades/Mods/Randomized/Test"; var catalog = new Catalog(); catalog.Items["/Gun"] = new GameItem { Uid = "/Gun", Name = "Test Gun", Kind = "Rifle", Category = "Primary", Disposition = 1 };
+            catalog.UpgradeExport = new JsonObject { [type] = JsonNode.Parse("""{"baseDrain":10,"fusionLimit":8,"upgradeEntries":[{"tag":"Damage","canBeBuff":true,"upgradeValues":[{"value":0.01,"locTag":"damage"}]},{"tag":"Crit","canBeBuff":true,"upgradeValues":[{"value":0.01,"locTag":"crit"}]},{"tag":"Zoom","canBeCurse":true,"upgradeValues":[{"value":0.01,"locTag":"zoom"}]}]}""") };
+            catalog.Dictionary = JsonNode.Parse("""{"damage":"Damage","crit":"Critical Chance","zoom":"Zoom"}""");
+            var payload = new JsonObject { ["ItemType"] = type, ["UpgradeFingerprint"] = JsonNode.Parse("""{"compat":"/Gun","lvl":8,"buffs":[{"Tag":"Damage","Value":1073741823},{"Tag":"Crit","Value":0}],"curses":[{"Tag":"Zoom","Value":0}],"Token":"must-not-escape"}""") };
+            var result = FingerprintRivenReader.Read(catalog, payload); var rows = J.A(result, "stats").ToArray();
+            Check(rows.Length == 3 && J.S(result, "source") == "game fingerprint", "Direct riven result missing");
+            Check(J.D(rows[0]["value"]) == 122.5 && J.D(rows[2]["value"]) == -40.1, "Decoded stat values differ");
+            Check(J.S(rows[0], "grade") == "A+" && J.S(rows[2], "grade") == "A+", "Roll polarity grading differs");
+            Check(!result.ToJsonString().Contains("must-not-escape"), "Unrecognized fingerprint fields escaped");
+            payload["UpgradeFingerprint"]!["buffs"]![0]!["Value"] = -1;
+            try { FingerprintRivenReader.Read(catalog, payload); throw new Exception("Invalid roll accepted"); } catch (InventoryException) { }
+        });
         test("Memory selection prefers the complete owned capture and joins adjacent regions", () =>
         {
             var snapshot = InventoryParser.Parse(Encoding.UTF8.GetBytes("{\"MiscItems\":[],\"LastInventorySync\":100}"), "fixture");
@@ -81,6 +126,31 @@ public static class IntegrationTests
             for (var i = 0; i < lines.Length; i++) canvas.DrawText(lines[i], 20, 55 + i * 60, SkiaSharp.SKTextAlign.Left, font, paint);
             text = ScreenCapture.Text(bitmap, new(0, 0, 1000, 300), 6, 0, CancellationToken.None).GetAwaiter().GetResult();
             var riven = OcrReader.ParseRiven(text, ["Boltor", "Braton"]); Check(riven.Weapon == "Boltor" && riven.Stats.Length == 3, "Riven image was not recognized");
+        });
+    }
+    public static void RegisterRewardImage(Action<string, Action> test, string path, string cachePath, string[]? expected)
+    {
+        test("External reward screenshot through native layout and OCR", () =>
+        {
+            using var cache = new CachedJson(cachePath, true); var catalog = new CatalogLoader(cache).Load().GetAwaiter().GetResult();
+            using var bitmap = SkiaSharp.SKBitmap.Decode(path) ?? throw new Exception("Image could not be decoded");
+            var layout = NativeEngine.Layout(bitmap, null); Console.WriteLine("Screenshot layout: " + System.Text.Json.JsonSerializer.Serialize(layout));
+            Check(layout != null, "Reward layout was not detected");
+            var names = catalog.Relics.Values.SelectMany(r => r.Rewards.Values).Select(r => r.Name).Distinct().ToArray(); var recognized = new List<string?>();
+            for (var slot = 0; slot < layout!.Cards; slot++)
+            {
+                var width = 242 * layout.Unit; var left = bitmap.Width / 2.0 - layout.Cards * width / 2 + slot * width;
+                var rect = new SkiaSharp.SKRectI((int)left, (int)(bitmap.Height / 2.0 - 150 * layout.Unit), (int)(left + width), (int)(bitmap.Height / 2.0 - 78 * layout.Unit));
+                (string? Name, double Score) best = (null, 0);
+                foreach (var variant in new[] { 2, 3, 4, 0 })
+                {
+                    var read = ScreenCapture.Text(bitmap, rect, 6, variant, CancellationToken.None).GetAwaiter().GetResult(); var match = OcrReader.Match(read, names);
+                    Console.WriteLine($"Card {slot + 1}, variant {variant}: {match.Name ?? "unknown"} ({match.Score:F3})");
+                    if (match.Score > best.Score) best = match; if (best.Score >= .98) break;
+                }
+                recognized.Add(best.Name);
+            }
+            if (expected != null) Check(recognized.SequenceEqual(expected), "Recognized rewards do not match expected slot order");
         });
     }
     private static void InDirectory(Action<string> action)

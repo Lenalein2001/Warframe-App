@@ -7,4 +7,9 @@
   <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
     <Content Include="../Native/build/libwarframe_overlay.so" Link="libwarframe_overlay.so" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+  <Target Name="ExcludeReleaseSymbols" AfterTargets="ComputeFilesToPublish" Condition="'$(Configuration)' == 'Release'">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.pdb'" />
+    </ItemGroup>
+  </Target>
 </Project>
