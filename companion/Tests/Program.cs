@@ -61,6 +61,14 @@ Test("Missing, invalid and negative counts are rejected rather than converted to
     Throws<InventoryException>(() => Parse("""{"MiscItems":[{"ItemType":"/X"}]}"""));
     Throws<InventoryException>(() => Parse("""{"MiscItems":[{"ItemType":"/X","ItemCount":9223372036854775807},{"ItemType":"/X","ItemCount":1}]}"""));
 });
+Test("Game serialization omits cosmetic zero counts and unranked syndicate titles", () =>
+{
+    var s = Parse("""{"MiscItems":[],"FlavourItems":[{"ItemType":"/Cosmetic"}],"Affiliations":[{"Tag":"Neutral","Standing":0}]}""");
+    Equal(0L, s.Counts["/Cosmetic"]); Equal(0L, s.Standing!.Syndicates["Neutral"].Title);
+    foreach (var value in new[] { "null", "-1", "1.2", "true" })
+        Throws<InventoryException>(() => Parse($$"""{"MiscItems":[],"FlavourItems":[{"ItemType":"/Cosmetic","ItemCount":{{value}}}]}"""));
+    Throws<InventoryException>(() => Parse("""{"MiscItems":[],"Affiliations":[{"Tag":"Neutral","Standing":0,"Title":null}]}"""));
+});
 Test("Identity verification and cross-account rejection", () =>
 {
     Equal(true, Parse("""{"MiscItems":[],"AccountId":{"$oid":"test"}}""").IdentityVerified);

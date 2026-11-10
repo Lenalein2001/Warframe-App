@@ -6,12 +6,15 @@
 #include <vector>
 #include <chrono>
 #include <cstring>
+#include <source_location>
 #ifdef _WIN32
 #include <windows.h>
 #else
 #include <unistd.h>
 #endif
-static void check(bool ok) { if (!ok) throw std::runtime_error("native regression failed"); }
+static void check(bool ok, const std::source_location where = std::source_location::current()) {
+    if (!ok) throw std::runtime_error("native regression failed at line " + std::to_string(where.line()));
+}
 static void memory_test() {
     // Heap allocation exercises real OS reads without inspecting another application's data.
     const char* fixture = "{\"LastInventorySync\":123,\"MiscItems\":[],\"nativeFixture\":\"wfc-regression-7d91\"}";
@@ -32,7 +35,9 @@ static void memory_test() {
 #else
     const auto pid = static_cast<int>(getpid());
 #endif
-    check(wfc_scan_memory(pid, candidate, progress, &found) == 1 && found);
+    const auto result = wfc_scan_memory(pid, candidate, progress, &found);
+    std::cout << "Process reader fixture: status " << result << ", found " << found << std::endl;
+    check(result == 1 && found);
     const auto cancel = [](std::uint64_t, void*) -> int { return 0; };
     check(wfc_scan_memory(pid, candidate, cancel, &found) == 1);
     check(wfc_scan_memory(-1, candidate, progress, &found) == -2);

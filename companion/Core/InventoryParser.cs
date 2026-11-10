@@ -71,7 +71,10 @@ public static class InventoryParser
             foreach (var e in Array(root, key))
             {
                 var uid = Item(e);
-                counts[uid] = checked(counts.GetValueOrDefault(uid) + Integer(Field(e, "ItemCount"), key + ".ItemCount"));
+                // Cosmetic records can omit the zero count in the game's inventory serialization.
+                var count = Field(e, "ItemCount");
+                counts[uid] = checked(counts.GetValueOrDefault(uid) +
+                    (key == "FlavourItems" && count.ValueKind == JsonValueKind.Undefined ? 0 : Integer(count, key + ".ItemCount")));
             }
         var equipment = new Dictionary<string, Equipment>(StringComparer.Ordinal);
         foreach (var key in EquipmentKeys)
@@ -126,7 +129,8 @@ public static class InventoryParser
         }
         var syndicates = new Dictionary<string, Affiliation>(StringComparer.Ordinal);
         foreach (var a in Array(root, "Affiliations"))
-            syndicates[RequiredText(a, "Tag")] = new(Integer(Field(a, "Standing"), "Standing", signed: true), Integer(Field(a, "Title"), "Title", signed: true));
+            syndicates[RequiredText(a, "Tag")] = new(Integer(Field(a, "Standing"), "Standing", signed: true),
+                Field(a, "Title").ValueKind == JsonValueKind.Undefined ? 0 : Integer(Field(a, "Title"), "Title", signed: true));
         var daily = new Dictionary<string, long>(StringComparer.Ordinal);
         foreach (var p in root.EnumerateObject())
             if (p.Name.StartsWith("DailyAffiliation", StringComparison.Ordinal)) daily[p.Name] = Integer(p.Value, "daily standing");

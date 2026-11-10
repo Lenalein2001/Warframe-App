@@ -208,7 +208,8 @@ public static class IntegrationTests
                 bool Accept(MemoryCapture capture) => (capture.Snapshot.IdentityVerified || LegacyMigration.SameOwner(capture.Snapshot.Xp, view.Profile?.Xp ?? current.Xp) == true)
                     && new[] { "MiscItems", "Suits", "Recipes", "XPInfo" }.All(capture.Sections.Contains);
                 var watch = System.Diagnostics.Stopwatch.StartNew();
-                var result = MemoryProvider.Scan(pid, current.AccountId, deadline.Token, Accept);
+                var diagnostics = new HashSet<string>();
+                var result = MemoryProvider.Scan(pid, current.AccountId, deadline.Token, Accept, message => { if (diagnostics.Count < 12 && diagnostics.Add(message)) Console.WriteLine(message); });
                 Check(Accept(result), "Live capture lacks verified ownership or required inventory sections.");
                 Console.WriteLine($"Live capture: {result.Snapshot.Counts.Count} stacks, {result.Sections.Length} sections, {watch.Elapsed.TotalSeconds:F2} seconds; no capture was persisted.");
             }

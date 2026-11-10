@@ -18,7 +18,7 @@ public static class MemoryProvider
         }
         return null;
     }
-    public static MemoryCapture? Decode(ReadOnlySpan<byte> bytes, int marker, string account)
+    public static MemoryCapture? Decode(ReadOnlySpan<byte> bytes, int marker, string account, Action<string>? diagnostic = null)
     {
         ReadOnlySpan<byte> needle = "\"LastInventorySync\""u8;
         if (marker < 0 || marker > bytes.Length - needle.Length || !bytes.Slice(marker, needle.Length).SequenceEqual(needle)) return null;
@@ -50,7 +50,7 @@ public static class MemoryProvider
                 var structural = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("LastInventorySync", out _)
                     && (root.TryGetProperty("MiscItems", out _) || root.TryGetProperty("Suits", out _));
                 // An intact object containing the hit must not be reinterpreted as a nested inventory.
-                if (!structural) { if (!addBrace) return null; continue; }
+                if (!structural) { diagnostic?.Invoke("Parsed object lacks top-level inventory sections."); if (!addBrace) return null; continue; }
                 var tokens = new Utf8JsonReader(input.AsSpan(0, checked((int)reader.BytesConsumed)));
                 var topLevelHit = false;
                 while (tokens.Read())
@@ -59,14 +59,17 @@ public static class MemoryProvider
                         topLevelHit = tokens.TokenType == JsonTokenType.PropertyName && tokens.CurrentDepth == 1 && tokens.ValueTextEquals("LastInventorySync");
                         break;
                     }
-                if (!topLevelHit) { if (!addBrace) return null; continue; }
+                if (!topLevelHit) { diagnostic?.Invoke("Inventory marker is nested rather than top-level."); if (!addBrace) return null; continue; }
                 // Only the allowlisted normalized snapshot crosses the persistence boundary.
                 var parsed = InventoryParser.Parse(input.AsMemory(0, checked((int)reader.BytesConsumed)), account);
                 var sections = root.EnumerateObject().Select(p => p.Name).Where(n => InventoryParser.CountedKeys.Contains(n)
                     || InventoryParser.EquipmentKeys.Contains(n) || n is "XPInfo" or "Upgrades" or "PendingRecipes").ToArray();
                 return new(parsed with { Provider = "game memory" }, sections);
             }
-            catch (Exception error) when (error is JsonException or InventoryException) { }
+            catch (Exception error) when (error is JsonException or InventoryException)
+            {
+                diagnostic?.Invoke(error is JsonException json ? $"Invalid JSON at byte {json.BytePositionInLine}." : error.Message);
+            }
         }
         return null;
     }
@@ -87,7 +90,7 @@ public static class MemoryProvider
         }
         if (pending is { } last) yield return last;
     }
-    public static MemoryCapture Scan(int pid, string account, CancellationToken cancellation, Func<MemoryCapture, bool>? acceptable = null)
+    public static MemoryCapture Scan(int pid, string account, CancellationToken cancellation, Func<MemoryCapture, bool>? acceptable = null, Action<string>? diagnostic = null)
     {
         MemoryCapture? best = null;
         Exception? callbackFailure = null;
@@ -100,10 +103,11 @@ public static class MemoryProvider
             {
                 cancellation.ThrowIfCancellationRequested();
                 candidates++;
+                diagnostic?.Invoke($"Candidate bytes: {size}; marker offset: {marker}.");
                 if (size > InventoryParser.MaxBytes || marker >= size) return 1;
                 var bytes = new byte[checked((int)size)];
                 Marshal.Copy(pointer, bytes, 0, bytes.Length);
-                var capture = Decode(bytes, checked((int)marker), account);
+                var capture = Decode(bytes, checked((int)marker), account, diagnostic);
                 if (capture != null) best = Prefer(best, capture, acceptable);
                 return 1;
             }
