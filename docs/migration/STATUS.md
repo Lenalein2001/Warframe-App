@@ -15,9 +15,11 @@ The active checkout contains C#, C and C++ application code, with no Rust source
 - Windows hotkeys, notifications and reward/riven overlays; Linux native overlay and compositor binding implementations.
 - Desktop, browser and headless modes; trigger/riven/quit commands and saved-image replay.
 - Reduced portable packages and a per-user Windows installer with upgrade/uninstall data preservation tests.
+- Inventory crafting-use lookup, weapon/mastery/use filters and linked recipe targets. Missing recipe data is distinct from no known consuming recipes.
+- Conventional `src`, `tests`, `packaging`, `tools` and `docs` layout; compact OCR fallback and repeatable API benchmarks.
 
 ## Acceptance evidence and remaining checks
 
 See [VALIDATION](VALIDATION.md) for actual runs, visual observations, measurements and outstanding platform-specific checks. Full Linux GUI and every live-game lifecycle combination are not certified. No final public release has been published.
 
-The preserved interface remains the acceptance surface. The settings gear is an intentional small correction; its reviewed asset hash is recorded in the interface contract.
+The established interface remains the acceptance surface. The settings gear and inventory crafting-use controls are intentional changes; reviewed asset hashes are recorded in the interface contract. Visual verification of the new inventory controls remains pending after desktop control was stopped by the user.

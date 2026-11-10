@@ -3,6 +3,13 @@
 /result-*
 .idea/
 .vscode/
+.vs/
+/.codex/
+/AGENTS.md
+/CLAUDE.md
+*.csproj.user
+*.suo
+codex-clipboard-*
 *.swp
 *.swo
 *~
@@ -13,11 +20,15 @@
 *.key
 *.ppm
 /frames/
-/companion/**/bin/
-/companion/**/obj/
+/src/**/bin/
+/src/**/obj/
+/tests/**/bin/
+/tests/**/obj/
+# Previous build folders remain local after the source layout migration.
+/companion/
 /artifacts/
 *.sqlite
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
-companion/Native/build/
+src/Native/build/

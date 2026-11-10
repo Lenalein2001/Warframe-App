@@ -4,7 +4,7 @@
 import { $, api, artUrl, debounce, esc, fmt, ago } from "../lib.js";
 import * as drawer from "../drawer.js";
 
-const st = { q: "", kind: "", sort: "name", tradable: false, limit: 240 };
+const st = { q: "", kind: "", sort: "name", tradable: false, weapons: false, mastered: false, crafting: "", limit: 240 };
 // Kinds the details panel knows; the rest have nothing more to show.
 const DETAILS = new Set(["Warframes", "Primary", "Secondary", "Melee", "Sentinels", "Archwing", "Arch-Gun", "Arch-Melee",
   "Pets", "Misc", "Prime parts", "Parts", "Relics"]);
@@ -21,14 +21,16 @@ const pic = (x) => (x.image
   : `<span class="inv-pic none"></span>`);
 
 function tile(x) {
-  const open = DETAILS.has(x.kind);
+  const open = x.hasDetail ? (x.lookupDetail ? "lookup:" : "") + x.uid : DETAILS.has(x.kind) ? x.uid : null;
   const money = [
     x.price != null ? `<span class="plat" title="Lowest sell order, each">${fmt(x.price)}</span>` : "",
     x.ducats ? `<span class="duc" title="Ducats each">${fmt(x.ducats)}</span>` : "",
   ].join("");
-  return `<${open ? "button type=\"button\"" : "div"} class="inv-tile${open ? " click" : ""}" ${open ? `data-uid="${esc(x.uid)}"` : ""} title="${esc(x.name)}">
+  const usage = x.craftingUses ? `Used in ${fmt(x.craftingUses)} recipe${x.craftingUses === 1 ? "" : "s"}` : x.craftingKnown ? "No known crafting uses" : "Recipe data unavailable";
+  return `<${open ? "button type=\"button\"" : "div"} class="inv-tile${open ? " click" : ""}" ${open ? `data-uid="${esc(open)}"` : ""} title="${esc(x.name)}">
     ${pic(x)}<span class="inv-body"><span class="inv-name">${esc(x.name)}</span>
-      <span class="inv-meta"><span class="inv-kind">${esc(x.kind)}</span>${money}</span></span>
+      <span class="inv-meta"><span class="inv-kind">${esc(x.kind)}</span>${money}</span>
+      ${x.isWeapon || x.craftingUses ? `<span class="inv-meta">${x.mastered === true ? "Mastered · " : ""}${usage}</span>` : ""}</span>
     <span class="inv-count">${x.count > 1 || !EQUIPMENT.has(x.kind) ? fmt(x.count) : ""}</span></${open ? "button" : "div"}>`;
 }
 
@@ -59,6 +61,13 @@ export default {
         <label class="check"><input type="checkbox" id="trade" ${st.tradable ? "checked" : ""}>Tradable</label>
         <span class="count" id="cnt"></span>
       </div>
+      <div class="toolbar" aria-label="Inventory use filters">
+        <label class="check"><input type="checkbox" id="weapons" ${st.weapons ? "checked" : ""}>Weapons</label>
+        <label class="check"><input type="checkbox" id="mastered" ${st.mastered ? "checked" : ""}>Mastered</label>
+        <label>Crafting use <select id="crafting">${[["", "Any"], ["used", "Used in a recipe"], ["none", "No known crafting uses"], ["unknown", "Recipe data unavailable"]].map(([v, l]) => `<option value="${v}" ${st.crafting === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+        <button id="review-weapons" class="ghost">Review mastered weapons without crafting uses</button>
+      </div>
+      <p class="muted">Crafting uses are based on loaded recipes. Mastery is account-wide; check upgrades, loadouts and individual copies before selling in-game.</p>
       <div class="kind-chips" id="kinds"><button class="chip ${st.kind ? "" : "on"}" data-kind="">All <span>${fmt(items.length)}</span></button>
         ${chips.map(([k, n]) => `<button class="chip ${st.kind === k ? "on" : ""}" data-kind="${esc(k)}">${esc(k)} <span>${fmt(n)}</span></button>`).join("")}</div>
       <div class="inv-grid" id="grid"></div>
@@ -66,6 +75,8 @@ export default {
     const draw = () => {
       const q = st.q.toLowerCase();
       const rows = items.filter((x) => (!st.kind || group(x.kind) === st.kind) && (!st.tradable || x.slug)
+        && (!st.weapons || x.isWeapon) && (!st.mastered || x.mastered === true)
+        && (!st.crafting || (st.crafting === "used" ? x.craftingUses > 0 : st.crafting === "none" ? x.craftingKnown && !x.craftingUses : !x.craftingKnown && !x.craftingUses))
         && (!q || x.name.toLowerCase().includes(q) || x.kind.toLowerCase().includes(q)));
       rows.sort(st.sort === "count" ? (a, b) => b.count - a.count
         : st.sort === "value" ? (a, b) => value(b) - value(a) || (b.ducats || 0) - (a.ducats || 0)
@@ -80,6 +91,14 @@ export default {
     draw();
     $("#q").oninput = debounce((e) => { st.q = e.target.value; st.limit = 240; draw(); }, 120);
     $("#trade").onchange = (e) => { st.tradable = e.target.checked; draw(); };
+    for (const key of ["weapons", "mastered"]) $("#" + key).onchange = (e) => { st[key] = e.target.checked; st.limit = 240; draw(); };
+    $("#crafting").onchange = (e) => { st.crafting = e.target.value; st.limit = 240; draw(); };
+    $("#review-weapons").onclick = () => {
+      st.weapons = st.mastered = true; st.crafting = "none"; st.kind = ""; st.q = ""; st.tradable = false; st.limit = 240;
+      $("#weapons").checked = $("#mastered").checked = true; $("#crafting").value = "none"; $("#q").value = ""; $("#trade").checked = false;
+      for (const x of view.querySelectorAll("#kinds .chip")) x.classList.toggle("on", x.dataset.kind === "");
+      draw();
+    };
     for (const b of view.querySelectorAll("#sort button")) {
       b.onclick = () => { st.sort = b.dataset.v; for (const x of view.querySelectorAll("#sort button")) x.classList.toggle("on", x === b); draw(); };
     }

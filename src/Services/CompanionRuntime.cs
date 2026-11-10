@@ -125,8 +125,10 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
             };
             return J.Node(new { ready = Catalog.LoadedAt != null, dataError = DataError, version = UpdateService.Version, os = OperatingSystem.IsWindows() ? "windows" : "linux", desktop = Desktop, update = Updates.Available,
                 account = new { key = account?.Key, id = account?.Id, name = account?.Name, source = account?.Source, playing = GameProcess != null && account?.Key == playingKey, logName = Log.Player, evidence = account?.Evidence ?? [], profileError = account?.ProfileError },
-                accounts = registry.Accounts.Select(a => new { key = a.Key, name = a.Name, id = a.Id, source = a.Source, active = a.Key == registry.Active, playing = GameProcess != null && a.Key == playingKey, masteryRank = a.Profile?.MasteryRank ?? snapshots.Current(a.Id ?? a.Key)?.MasteryRank ?? a.Badge, masteryRankMax = a.Profile?.MasteryRank == null && snapshots.Current(a.Id ?? a.Key)?.MasteryRank == null ? a.BadgeMax : null,
-                    profile = a.Profile?.Fetched, profileError = a.ProfileError, inventory = snapshots.Current(a.Id ?? a.Key)?.SourceTimestamp, seen = a.Seen, evidence = a.Evidence }),
+                accounts = registry.Accounts.Select(a => {
+                    var saved = a.Key == registry.Active ? inv : snapshots.Current(a.Id ?? a.Key);
+                    return new { key = a.Key, name = a.Name, id = a.Id, source = a.Source, active = a.Key == registry.Active, playing = GameProcess != null && a.Key == playingKey, masteryRank = a.Profile?.MasteryRank ?? saved?.MasteryRank ?? a.Badge, masteryRankMax = a.Profile?.MasteryRank == null && saved?.MasteryRank == null ? a.BadgeMax : null,
+                        profile = a.Profile?.Fetched, profileError = a.ProfileError, inventory = saved?.SourceTimestamp, seen = a.Seen, evidence = a.Evidence }; }),
                 masteryRank = profile?.MasteryRank ?? inv?.MasteryRank ?? account?.Badge, masteryRankMax = profile?.MasteryRank == null && inv?.MasteryRank == null ? account?.BadgeMax : null, mastered, total = Catalog.Items.Count, mastery = view.MasteryProgress(), currencies = inv?.Currencies,
                 foundry = view.PendingFoundry(), collection = view.Collection(), pinned = view.Pinned(), tasks = new FarmingPlanner(view).Board(true), session = History.Read(registry.Active, Started)["session"], sources,
                 events = events.TakeLast(15), logLines = Array.Empty<string>() });

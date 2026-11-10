@@ -1,4 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
-  <ItemGroup><ProjectReference Include="../Services/Services.csproj" /><ProjectReference Include="../Host/Host.csproj" /></ItemGroup>
-</Project>

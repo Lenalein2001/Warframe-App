@@ -7,7 +7,7 @@ in pkgs.buildDotnetModule {
     src = ./.;
     filter = path: _type: !(builtins.elem (baseNameOf path) [ ".git" "artifacts" "bin" "obj" "build" "result" ]);
   };
-  projectFile = "companion/Desktop/Desktop.csproj";
+  projectFile = "src/Desktop/Desktop.csproj";
   nugetDeps = ./nix/deps.json;
   dotnet-sdk = pkgs.dotnetCorePackages.sdk_10_0;
   dotnet-runtime = pkgs.dotnetCorePackages.aspnetcore_10_0;
@@ -19,16 +19,15 @@ in pkgs.buildDotnetModule {
   runtimeDeps = runtime.libraries;
   dontUseCmakeConfigure = true;
   preBuild = ''
-    cmake -S companion/Native -B companion/Native/build -DCMAKE_BUILD_TYPE=Release
-    cmake --build companion/Native/build --parallel "$NIX_BUILD_CORES"
-    ctest --test-dir companion/Native/build --output-on-failure
+    cmake -S src/Native -B src/Native/build -DCMAKE_BUILD_TYPE=Release
+    cmake --build src/Native/build --parallel "$NIX_BUILD_CORES"
+    ctest --test-dir src/Native/build --output-on-failure
   '';
   preFixup = ''
     gappsWrapperArgs+=(--prefix PATH : ${pkgs.lib.makeBinPath runtime.tools})
   '';
   postInstall = ''
-    install -Dm644 warframeproject.desktop $out/share/applications/warframe-companion.desktop
-    substituteInPlace $out/share/applications/warframe-companion.desktop --replace-fail "Exec=/path/to/warframeproject/run.sh" "Exec=WarframeCompanion.Desktop"
+    install -Dm644 packaging/linux/warframe-companion.desktop $out/share/applications/warframe-companion.desktop
   '';
   meta = {
     description = "Warframe companion with C# services and native C/C++ processing";

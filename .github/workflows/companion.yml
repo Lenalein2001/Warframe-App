@@ -1,7 +1,7 @@
 name: CSharp and native validation
 on:
   push:
-    paths: ['companion/**', 'web/**', 'tools/**', 'nix/**', '*.nix', 'run.sh', 'docs/migration/contracts.json', '.github/workflows/**']
+    paths: ['src/**', 'tests/**', 'web/**', 'tools/**', 'nix/**', '*.nix', '*.props', '*.slnx', 'run.sh', 'docs/migration/contracts.json', '.github/workflows/**']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -29,15 +29,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libgtk-layer-shell-dev
-          cmake -S companion/Native -B companion/Native/build -DCMAKE_BUILD_TYPE=Release
-          cmake --build companion/Native/build --parallel
-          ctest --test-dir companion/Native/build --output-on-failure
-      - run: dotnet restore companion/Tests/Tests.csproj --locked-mode
-      - run: dotnet run --project companion/Tests/Tests.csproj -c Release --no-restore
-      - run: dotnet restore companion/App/App.csproj --locked-mode
-      - run: dotnet build companion/App/App.csproj -c Release --no-restore
-      - run: dotnet restore companion/Desktop/Desktop.csproj --locked-mode
-      - run: dotnet build companion/Desktop/Desktop.csproj -c Release --no-restore
+          cmake -S src/Native -B src/Native/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build src/Native/build --parallel
+          ctest --test-dir src/Native/build --output-on-failure
+      - run: dotnet restore tests/WarframeCompanion.Tests/Tests.csproj --locked-mode
+      - run: dotnet run --project tests/WarframeCompanion.Tests/Tests.csproj -c Release --no-restore
+      - run: dotnet restore src/App/App.csproj --locked-mode
+      - run: dotnet build src/App/App.csproj -c Release --no-restore
+      - run: dotnet restore src/Desktop/Desktop.csproj --locked-mode
+      - run: dotnet build src/Desktop/Desktop.csproj -c Release --no-restore
   nix:
     runs-on: ubuntu-latest
     steps:

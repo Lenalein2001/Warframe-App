@@ -28,7 +28,9 @@ jobs:
         run: |
           Expand-Archive tesseract.zip -DestinationPath artifacts/ocr
           ./tools/publish-companion.ps1 -TesseractRoot "$PWD/artifacts/ocr"
-          dotnet run --project companion/Tests -c Release
+          $env:PATH = "$PWD/artifacts/ocr;$env:PATH"
+          $env:TESSDATA_PREFIX = "$PWD/artifacts/ocr/tessdata"
+          dotnet run --project tests/WarframeCompanion.Tests -c Release -- --ocr
           if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed.' }
           python tools/smoke-desktop-package.py (Get-ChildItem artifacts/companion-win-x64-* -Directory | Select-Object -Last 1).FullName
           if ($LASTEXITCODE -ne 0) { throw 'Package smoke tests failed.' }

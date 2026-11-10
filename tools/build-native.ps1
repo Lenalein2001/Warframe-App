@@ -1,6 +1,6 @@
 param([ValidateSet('Release','Debug')][string]$Configuration = 'Release')
 $ErrorActionPreference = 'Stop'
-$source = Join-Path $PSScriptRoot '../companion/Native'
+$source = Join-Path $PSScriptRoot '../src/Native'
 $build = Join-Path $source 'build'
 $cmake = Get-Command cmake -ErrorAction SilentlyContinue
 if ($cmake) { $cmakePath = $cmake.Source } else {

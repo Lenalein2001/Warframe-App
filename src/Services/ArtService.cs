@@ -33,6 +33,9 @@ public sealed class ArtService(string directory, bool offline) : IDisposable
     {
         if (!Allowed(url)) throw new InventoryException("Unknown artwork source.");
         size = Math.Clamp(size, 16, 512); var file = Path.Combine(directory, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(url))) + "-" + size + ".png");
+        // Local thumbnails must not queue behind slow network downloads.
+        if (File.Exists(file) && (offline || DateTime.UtcNow - File.GetLastWriteTimeUtc(file) < TimeSpan.FromDays(30)))
+            return await File.ReadAllBytesAsync(file, cancellation);
         await gate.WaitAsync(cancellation);
         try
         {

@@ -3,7 +3,7 @@ import hashlib, json, os, pathlib
 root = pathlib.Path(__file__).resolve().parents[1]
 cache = pathlib.Path(os.environ.get('NUGET_PACKAGES', pathlib.Path.home()/'.nuget/packages'))
 packages = {}
-for lock in (root/'companion').glob('*/packages.lock.json'):
+for lock in list((root/'src').glob('*/packages.lock.json')) + list((root/'tests').glob('*/packages.lock.json')):
     for framework in json.loads(lock.read_text())['dependencies'].values():
         for name, item in framework.items():
             if item['type'].lower() == 'project': continue

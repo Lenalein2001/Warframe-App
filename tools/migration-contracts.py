@@ -8,7 +8,7 @@ def digest(path):
     return hashlib.sha256(data).hexdigest()
 actual = {p.relative_to(root).as_posix(): digest(p) for p in sorted((root/'web').rglob('*')) if p.is_file()}
 assert actual == manifest['web'], 'Preserved frontend changed; review the contract.'
-s = (root/'companion/Services/CompanionRuntime.cs').read_text()
+s = (root/'src/Services/CompanionRuntime.cs').read_text()
 g = s[s.index('public JsonNode Get('):s.index('public async Task<JsonNode> Post(')]
 p = s[s.index('public async Task<JsonNode> Post('):]
 routes = {'GET': set(re.findall(r'"([a-z/-]+)"\s*=>',g)) | set(re.findall(r'path == "([a-z/-]+)"',g)) | {'art'}, 'POST': set(re.findall(r'case "([a-z/-]+)":',p))}

@@ -53,7 +53,7 @@ export async function open(key, push = true, opts = {}) {
       ${market ? `<a class="btn ghost" href="https://warframe.market/items/${esc(market)}" target="_blank" rel="noopener">${icon("link")} warframe.market</a>` : ""}
       ${x.kind !== "drop" ? `<button class="ghost icon pin ${x.pinned ? "on" : ""}" data-pin title="${x.pinned ? "Unpin from the Overview" : "Pin to the Overview"}">${icon("star")}</button>` : ""}
       <button class="ghost icon" data-close title="Close (Esc)">${icon("x")}</button>
-    </div>${body}`;
+    </div>${body}${craftingUses(x)}`;
   hydrateIcons(d);
   wire(d, x, version);
   // Keyboard users land in the drawer, on its close button.
@@ -63,6 +63,14 @@ export async function open(key, push = true, opts = {}) {
 $("#scrim").onclick = close;
 
 // ------------------------------------------------------------------ a syndicate
+
+function craftingUses(x) {
+  if (!x.craftingUses) return "";
+  return `<div class="dsec"><h2>Used as a crafting ingredient</h2>${x.craftingUses.length
+    ? `<div class="list">${x.craftingUses.map((use) => `<div class="list-row${use.detailKey ? " click" : ""}" ${use.detailKey ? `data-open="${esc(use.detailKey)}"` : ""}>
+        ${art(use.image, "sm")}<div class="main"><div class="t">${esc(use.name)}</div><div class="s">Consumes ${fmt(use.count)} × ${esc(x.name)}${use.owned ? ` · ${fmt(use.owned)} owned` : ""}</div></div>${use.status ? statusPill(use.status) : ""}</div>`).join("")}</div>`
+    : `<p class="muted">${x.craftingKnown ? "No known crafting recipes consume this item." : "Recipe data is unavailable; crafting uses cannot be determined yet."}</p>`}</div>`;
+}
 
 const syndicateArt = (url, px) => (url ? `<img class="gi" alt="" width="${px}" height="${px}" src="${esc(artUrl(url, px))}" onerror="this.remove()">` : "");
 

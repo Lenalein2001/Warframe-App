@@ -135,8 +135,15 @@ public sealed partial class GameView(Catalog catalog, InventorySnapshot? invento
         if (Inventory == null) return J.Node(new { items = Array.Empty<object>(), source = (string?)null });
         var entries = Inventory.Equipment.Select(p => (p.Key, p.Value.Count)).Concat(Inventory.Counts.Where(p => p.Value > 0 && !Inventory.Equipment.ContainsKey(p.Key)).Select(p => (p.Key, p.Value)));
         var rows = entries.Select(p => { var (name, kind, image) = InventoryEntry(p.Key); var slug = Market.Slug(p.Key, null, name); if (Market.Item(slug) == null) slug = null;
-            return new { uid = p.Key, name, kind, count = p.Item2, image, price = Market.Price(slug, false)?.Sell, ducats = Market.Item(slug)?.Ducats, slug }; });
-        return J.Node(new { items = rows, source = Inventory.Provider, imported = Inventory.ReadAt.ToUnixTimeMilliseconds() / 1000.0, currencies = Inventory.Currencies });
+            var item = Catalog.Items.GetValueOrDefault(p.Key);
+            var uses = Catalog.CraftingUses.GetValueOrDefault(p.Key) ?? [];
+            return new { uid = p.Key, name, kind, count = p.Item2, image, price = Market.Price(slug, false)?.Sell, ducats = Market.Item(slug)?.Ducats, slug,
+                isWeapon = item?.Category is "Primary" or "Secondary" or "Melee" or "Arch-Gun" or "Arch-Melee" or "SentinelWeapons",
+                mastered = item == null ? (bool?)null : Status(item).Status == "mastered", craftingUses = uses.Length,
+                craftingKnown = Catalog.RecipesAvailable,
+                hasDetail = item != null || Catalog.Aliases.ContainsKey(p.Key) || Catalog.RelicUids.ContainsKey(p.Key) || Catalog.Inventory.ContainsKey(p.Key) || Catalog.Lookup.ContainsKey(p.Key),
+                lookupDetail = item == null && !Catalog.Aliases.ContainsKey(p.Key) && !Catalog.RelicUids.ContainsKey(p.Key) && !Catalog.Inventory.ContainsKey(p.Key) && Catalog.Lookup.ContainsKey(p.Key) }; });
+        return J.Node(new { items = rows, source = Inventory.Provider, imported = Inventory.ReadAt.ToUnixTimeMilliseconds() / 1000.0, currencies = Inventory.Currencies, recipesAvailable = Catalog.RecipesAvailable });
     }
     private (string Name, string Kind, string? Image) InventoryEntry(string uid, HashSet<string>? visiting = null)
     {

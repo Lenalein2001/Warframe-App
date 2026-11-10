@@ -9,6 +9,29 @@ public static class ServiceTests
     private static JsonNode Json(string value) => JsonNode.Parse(value)!;
     public static void Register(Action<string, Action> test)
     {
+        test("Inventory crafting uses retain consumed weapons, counts, chains and unknown data", () => WithView((baseView, manual) =>
+        {
+            var raw = new Dictionary<string, JsonNode> {
+                ["Secondary"] = Json("""[{"uniqueName":"/A","name":"Pistol","masterable":true},{"uniqueName":"/B","name":"Dual Pistol","masterable":true,"components":[{"uniqueName":"/A","itemCount":2}]},{"uniqueName":"/C","name":"Combined Weapon","masterable":true},{"uniqueName":"/D","name":"Standalone Weapon","masterable":true}]"""),
+                ["ExportRecipes"] = Json("""{"/RecipeB":{"resultType":"/B","ingredients":[{"ItemType":"/A","ItemCount":2}]},"/RecipeC":{"resultType":"/C","ingredients":[{"ItemType":"/B","ItemCount":1}]}}""")
+            };
+            var catalog = Catalog.Build(raw);
+            Equal(1, catalog.CraftingUses["/A"].Length); Equal(2L, catalog.CraftingUses["/A"][0].Count);
+            Equal("/C", catalog.CraftingUses["/B"][0].Uid);
+            var inventory = InventoryParser.Parse(Encoding.UTF8.GetBytes("""{"MiscItems":[],"Pistols":[{"ItemType":"/A","XP":450000},{"ItemType":"/D","XP":450000}]}"""), "fixture", true);
+            var view = new GameView(catalog, inventory, null, manual, baseView.Market);
+            var rows = J.A(view.InventoryRows(), "items").ToDictionary(n => J.S(n, "uid")!);
+            Equal(true, J.B(rows["/A"]["isWeapon"])); Equal(true, J.B(rows["/A"]["mastered"]));
+            Equal(1L, J.N(rows["/A"], "craftingUses")); Equal(0L, J.N(rows["/D"], "craftingUses"));
+            Equal(true, J.B(rows["/D"]["craftingKnown"]));
+            Equal(2L, J.N(J.A(view.Detail("/A"), "craftingUses").Single(), "count"));
+            raw.Remove("ExportRecipes");
+            var incomplete = new GameView(Catalog.Build(raw), inventory, null, manual, baseView.Market);
+            Equal(false, J.B(J.A(incomplete.InventoryRows(), "items").First()["craftingKnown"]));
+            // Mastered output weapons do not erase their ingredient requirements.
+            manual.Mastered["/B"] = 1;
+            Equal(1, J.A(view.Detail("/A"), "craftingUses").Count());
+        }));
         test("Overlay layout keeps four ordered panels aligned at game scale and monitor origin", () =>
         {
             var request = new OverlayRequest("rewards", Json("""{"cards":4}"""), -1920, 80, 1920, 1080, 1, 15, false);

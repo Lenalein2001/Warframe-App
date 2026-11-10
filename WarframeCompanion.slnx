@@ -1,11 +1,13 @@
 <Solution>
-  <Folder Name="/companion/">
-    <Project Path="companion/App/App.csproj" />
-    <Project Path="companion/Core/Core.csproj" />
-    <Project Path="companion/Desktop/Desktop.csproj" />
-    <Project Path="companion/Host/Host.csproj" />
-    <Project Path="companion/Persistence/Persistence.csproj" />
-    <Project Path="companion/Services/Services.csproj" />
-    <Project Path="companion/Tests/Tests.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/App/App.csproj" />
+    <Project Path="src/Core/Core.csproj" />
+    <Project Path="src/Desktop/Desktop.csproj" />
+    <Project Path="src/Host/Host.csproj" />
+    <Project Path="src/Persistence/Persistence.csproj" />
+    <Project Path="src/Services/Services.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WarframeCompanion.Tests/Tests.csproj" />
   </Folder>
 </Solution>

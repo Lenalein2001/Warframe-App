@@ -4,16 +4,16 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
-$project = Join-Path $repoRoot 'companion/Desktop/Desktop.csproj'
+$project = Join-Path $repoRoot 'src/Desktop/Desktop.csproj'
 if ($Runtime.StartsWith('win-')) {
     if (!$IsWindows) { throw 'Build Windows desktop packages on Windows.' }
     if (!$TesseractRoot -or !(Test-Path -LiteralPath (Join-Path $TesseractRoot 'tesseract.exe')) -or !(Test-Path -LiteralPath (Join-Path $TesseractRoot 'tessdata/eng.traineddata')) -or !(Test-Path -LiteralPath (Join-Path $TesseractRoot 'licenses'))) { throw 'Supply -TesseractRoot with the complete OCR bundle, English data and licenses.' }
     & (Join-Path $PSScriptRoot 'build-native.ps1')
 } else {
     if (!$IsLinux) { throw 'Build Linux desktop packages on Linux so native libraries match the target.' }
-    & cmake -S (Join-Path $repoRoot 'companion/Native') -B (Join-Path $repoRoot 'companion/Native/build') -DCMAKE_BUILD_TYPE=Release
+    & cmake -S (Join-Path $repoRoot 'src/Native') -B (Join-Path $repoRoot 'src/Native/build') -DCMAKE_BUILD_TYPE=Release
     if ($LASTEXITCODE -ne 0) { throw 'Native configure failed.' }
-    & cmake --build (Join-Path $repoRoot 'companion/Native/build') --parallel
+    & cmake --build (Join-Path $repoRoot 'src/Native/build') --parallel
     if ($LASTEXITCODE -ne 0) { throw 'Native build failed.' }
 }
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
@@ -28,9 +28,9 @@ foreach ($selfContained in @($false, $true)) {
         '-p:DebugType=None', '-p:DebugSymbols=false', '-p:RestoreLockedMode=true')
     & dotnet @arguments
     if ($LASTEXITCODE -ne 0) { throw "Publishing $edition failed." }
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'companion/README.md') -Destination $destination
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/USAGE.md') -Destination (Join-Path $destination 'README.md')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination $destination
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'companion/licenses') -Destination $destination -Recurse
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'licenses') -Destination $destination -Recurse
     if ($Runtime.StartsWith('win-')) {
         New-Item -ItemType Directory -Path (Join-Path $destination 'tools') | Out-Null
         Copy-Item -LiteralPath $TesseractRoot -Destination (Join-Path $destination 'tools/tesseract') -Recurse

@@ -17,11 +17,11 @@ cp "$prefix/bin/tesseract.exe" "$dir/"
 ldd "$prefix/bin/tesseract.exe" | awk -v p="$prefix/" 'index($3, p) == 1 { print $3 }' | sort -u |
   while read -r dll; do cp "$dll" "$dir/"; done
 
-# The same model file as the Linux build's (tesseract-ocr/tessdata), checked byte for byte, so
-# both versions read the reward screen alike.
+# Compact LSTM English model, pinned and checked byte for byte. Recognition is
+# regression-tested against synthetic reward/riven images and private reward fixtures.
 curl -fsSL -o "$dir/tessdata/eng.traineddata" \
-  https://raw.githubusercontent.com/tesseract-ocr/tessdata/4.1.0/eng.traineddata
-echo "daa0c97d651c19fba3b25e81317cd697e9908c8208090c94c3905381c23fc047  $dir/tessdata/eng.traineddata" |
+  https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/4.1.0/eng.traineddata
+echo "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2  $dir/tessdata/eng.traineddata" |
   sha256sum -c -
 cp -r "$prefix/share/tessdata/configs" "$dir/tessdata/"
 

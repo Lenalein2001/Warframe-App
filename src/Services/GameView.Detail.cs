@@ -23,6 +23,14 @@ public sealed partial class GameView
         {
             row["pinned"] = Manual.Pinned.Contains(J.S(row, "key") ?? key);
             var uid = J.S(row, "uid") ?? (key.StartsWith("lookup:", StringComparison.Ordinal) ? key[7..] : null);
+            if (uid != null)
+            {
+                row["craftingKnown"] = Catalog.RecipesAvailable;
+                row["craftingUses"] = J.Array((Catalog.CraftingUses.GetValueOrDefault(uid) ?? []).Select(use => new {
+                    uid = use.Uid, name = use.Name, count = use.Count, image = Catalog.ImageFor(use.Uid),
+                    detailKey = Catalog.Items.ContainsKey(use.Uid) || Catalog.Aliases.ContainsKey(use.Uid) || Catalog.Inventory.ContainsKey(use.Uid) ? use.Uid : Catalog.Lookup.ContainsKey(use.Uid) ? "lookup:" + use.Uid : null,
+                    status = Catalog.Items.TryGetValue(use.Uid, out var target) ? Status(target).Status : null, owned = Owned(use.Uid) }));
+            }
             if (uid != null && new FarmingPlanner(this).Thing(uid) is { }) row["task"] = J.Node(new { uid, onBoard = Manual.Tasks.Any(t => t.Uid == uid) });
             return row;
         }
@@ -56,8 +64,13 @@ public sealed partial class GameView
                 vaulted = part.Vaulted, have = Count(canon), needed = NeededParts().GetValueOrDefault(canon), relics = References(part.Relics), drops = Catalog.Drops.ForName(part.Name, true), recipe = PartRecipe(canon), recipesAvailable = Catalog.RecipesAvailable,
                 dropCoverage = Coverage, usedIn = part.Items.Where(Catalog.Items.ContainsKey).Select(uid => Catalog.Items[uid]).Select(i => new { uid = i.Uid, name = i.Name, image = Services.Catalog.ImageUrl(i.Image), status = Status(i).Status }) }));
         }
-        var name = key.EndsWith(" Relic", StringComparison.Ordinal) ? key[..^6] : key;
-        if (!Catalog.Relics.TryGetValue(name, out var relic)) return null;
+        var name = Catalog.RelicUids.TryGetValue(key, out var inventoryRelic) ? inventoryRelic.Name : key.EndsWith(" Relic", StringComparison.Ordinal) ? key[..^6] : key;
+        if (!Catalog.Relics.TryGetValue(name, out var relic))
+        {
+            if (!Catalog.Inventory.ContainsKey(key)) return null;
+            var entry = InventoryEntry(key);
+            return WithCommon((JsonObject)J.Node(new { kind = "drop", key, uid = key, name = entry.Name, image = entry.Image, drops = Catalog.Drops.ForName(entry.Name), dropCoverage = Coverage }));
+        }
         var result = RelicRow(relic); result["kind"] = "relic"; result["key"] = name; result["open"] = Open(relic.Era) && (!relic.Vaulted || J.N(result, "total") > 0);
         result["drops"] = J.Array(Catalog.Drops.ForName(name + " Relic")); result["dropCoverage"] = Coverage;
         return WithCommon(result);

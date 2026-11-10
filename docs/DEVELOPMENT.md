@@ -1,6 +1,18 @@
 # Warframe Companion C# replacement
 
-The desktop application hosts the preserved `web/` interface through Photino, with C# services and native C/C++ process reading, image processing, fuzzy matching and export decoding. The settings gear has an intentional alignment correction. No Rust backend or compiler is used. Platform-specific validation limits are recorded separately.
+The desktop application hosts the `web/` interface through Photino, with C# services and native C/C++ process reading, image processing, fuzzy matching and export decoding. Interface changes include the settings icon correction and inventory crafting-use filters. Platform-specific validation limits are recorded separately.
+
+## Repository layout
+
+`src/Core` defines validated inventory data, `src/Persistence` owns SQLite transactions, and `src/Services` implements catalog and game features. `src/Host` exposes the local HTTP API; `src/Desktop` hosts the window, hotkeys and overlays. `src/App` is the inventory administration CLI. `src/Native` contains C/C++ libraries and their public ABI.
+
+Managed tests live in `tests/WarframeCompanion.Tests`; native tests live in `tests/native`. Windows and Linux packaging files live in `packaging`. Build output, private screenshots, account data, local configuration and agent files must not be committed. Maintained tests and repeatable build tools belong in the repository.
+
+## Performance checks
+
+Run `python tools/benchmark-api.py --url http://127.0.0.1:8642 --output artifacts/latency.json` against an isolated, populated instance. It warms each route and reports median/p95 latency and payload size, without exporting account content. Compare identical data, edition and background load. A live game can materially change timing; API latency is not a game frame-time measurement.
+
+Crafting uses are indexed once per catalog load, then looked up by item ID. Cached thumbnails bypass the network download queue. Account summaries reuse their already-read snapshot. Avoid process-wide caches of mutable account data unless invalidation and account isolation are covered by tests.
 
 ## Build and run
 
@@ -8,11 +20,11 @@ Windows requires .NET SDK 10, Visual Studio C++ Build Tools with CMake, and WebV
 
 ```powershell
 ./tools/build-native.ps1
-dotnet restore companion/Desktop --locked-mode
-dotnet build companion/Desktop -c Release --no-restore
-dotnet run --project companion/Tests -c Release -- --ocr
+dotnet restore src/Desktop --locked-mode
+dotnet build src/Desktop -c Release --no-restore
+dotnet run --project tests/WarframeCompanion.Tests -c Release -- --ocr
 python tools/migration-contracts.py --check
-dotnet run --project companion/Desktop -c Release
+dotnet run --project src/Desktop -c Release
 ```
 
 Linux additionally requires GTK3, WebKitGTK 4.1, gtk-layer-shell, Tesseract English data, a supported screenshot utility, and libnotify for notifications. Build the native libraries with CMake before building .NET. Linux runtime and compositor verification remain separate release gates.
@@ -37,10 +49,10 @@ Partial inventory observations cannot replace confirmed inventory. Older or unor
 ./tools/publish-companion.ps1 -Runtime win-x64 -TesseractRoot C:/path/to/complete/tesseract-bundle
 ```
 
-The OCR bundle must contain `tesseract.exe`, its DLLs, `tessdata/eng.traineddata`, and dependency licenses. The existing `.github/bundle-tesseract.sh` creates this structure from MSYS2. Packages include the desktop host, services, native libraries, unchanged embedded UI, and OCR bundle. `Portable.cmd` selects portable storage; launching the executable normally selects per-user storage. Framework-dependent packages require both .NET 10 and ASP.NET Core 10 runtimes. Self-contained packages include these runtimes; WebView2 is still an OS prerequisite.
+The OCR bundle must contain `tesseract.exe`, its DLLs, `tessdata/eng.traineddata`, and dependency licenses. `.github/bundle-tesseract.sh` creates this structure from MSYS2 and pins the compact English LSTM model by SHA-256. Packages include the desktop host, services, native libraries, embedded UI, and OCR bundle. `Portable.cmd` selects portable storage; launching the executable normally selects per-user storage. Framework-dependent packages require both .NET 10 and ASP.NET Core 10 runtimes. Self-contained packages include these runtimes; WebView2 is still an OS prerequisite.
 
 Package output goes to a unique directory under `artifacts`. No account data is packaged. Do not infer desktop sizes from the older inventory-only CLI artifacts.
 
-The separate `companion/App` CLI remains available for inventory validation, explicit complete imports, current/history inspection, normalized export, SQLite backup and integrity checking. Its data-directory defaults differ from the desktop; supply `--data-dir` when using it against a desktop snapshot database.
+The separate `src/App` CLI remains available for inventory validation, explicit complete imports, current/history inspection, normalized export, SQLite backup and integrity checking. Its data-directory defaults differ from the desktop; supply `--data-dir` when using it against a desktop snapshot database.
 
 See `docs/migration/STATUS.md` and `docs/migration/VALIDATION.md` in the repository for implemented scope and outstanding evidence.

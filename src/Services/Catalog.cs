@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 namespace WarframeCompanion.Services;
 
 public sealed record Component(string Uid, long Count, string Kind, string Name);
+public sealed record CraftUse(string Uid, string Name, long Count);
 public sealed class GameItem
 {
     public required string Uid { get; init; }
@@ -71,6 +72,7 @@ public sealed class Catalog
     public Dictionary<string, string> Art { get; } = [];
     public Dictionary<string, LookupItem> Lookup { get; } = [];
     public Dictionary<string, PartRecipe> Recipes { get; } = [];
+    public Dictionary<string, CraftUse[]> CraftingUses { get; } = [];
     public Dictionary<string, InventoryEntry> Inventory { get; } = [];
     public List<Craft> Crafts { get; } = [];
     public Dictionary<string, string> Resources { get; } = [];
@@ -243,6 +245,27 @@ public sealed class Catalog
         foreach (var need in cat.Items.Values.SelectMany(i => i.Components).Where(c => c.Kind == "resource").Select(c => new CraftNeed(c.Uid, c.Name, c.Count))
             .Concat(cat.Recipes.Values.SelectMany(r => r.Ingredients)).Concat(cat.Crafts.SelectMany(c => c.Needs)))
             if (!cat.Items.ContainsKey(need.Uid) && !cat.Aliases.ContainsKey(need.Uid) && !need.Uid.Contains("/Recipes/", StringComparison.Ordinal) && !need.Uid.EndsWith("Blueprint", StringComparison.Ordinal)) cat.Resources.TryAdd(need.Uid, need.Name);
+        cat.IndexCraftingUses();
         return cat;
+    }
+
+    // Build once per catalog refresh; inventory requests never scan every recipe.
+    private void IndexCraftingUses()
+    {
+        var uses = new Dictionary<string, Dictionary<string, long>>(StringComparer.Ordinal);
+        void Add(string ingredient, string result, long count)
+        {
+            if (ingredient == result || count <= 0) return;
+            if (!uses.TryGetValue(ingredient, out var results)) uses[ingredient] = results = new(StringComparer.Ordinal);
+            results[result] = Math.Max(results.GetValueOrDefault(result), count);
+        }
+        foreach (var item in Items.Values)
+            foreach (var need in item.Components) Add(need.Uid, item.Uid, need.Count);
+        foreach (var craft in Crafts)
+            foreach (var need in craft.Needs) Add(need.Uid, craft.Uid, need.Count);
+        foreach (var recipe in Recipes.Values)
+            foreach (var need in recipe.Ingredients.GroupBy(n => n.Uid)) Add(need.Key, recipe.Result, need.Sum(n => n.Count));
+        foreach (var (ingredient, results) in uses)
+            CraftingUses[ingredient] = results.Select(r => new CraftUse(r.Key, NameOf(r.Key), r.Value)).OrderBy(r => r.Name, StringComparer.Ordinal).ToArray();
     }
 }

@@ -1,0 +1,2 @@
+# Upstream compression sources are vendored, not application code.
+src/Native/vendor/** linguist-vendored
