@@ -39,7 +39,9 @@ internal sealed class NativeOverlay(PhotinoWindow parent, string url, string dir
             if (OperatingSystem.IsWindows())
             {
                 var handle = window.WindowHandle; var style = GetWindowLongPtrW(handle, -20).ToInt64(); SetWindowLongPtrW(handle, -20, (nint)(style | 0x08000000 | 0x80000 | 0x20 | 0x80));
-                SetLayeredWindowAttributes(handle, 0, 255, 2);
+                // WebView's transparent surface is black in a layered HWND. Key it
+                // out so the gap between cards does not obscure the game.
+                SetLayeredWindowAttributes(handle, 0, 255, 3);
                 SetWindowPos(handle, (nint)(-1), left, top, width, height, 0x10 | 0x40);
             }
         });

@@ -2,6 +2,8 @@
 
 The active checkout contains C#, C and C++ application code, with no Rust source, Cargo project or Rust build dependency. The original implementation remains available in Git history at baseline `decc9b5`.
 
+`senpai` is the default and only branch in the fork. The old main and PR branch tips were verified as ancestors before removing those redundant branch references; their history remains reachable.
+
 ## Implemented
 
 - Preserved desktop interface hosted by C# Photino and a loopback ASP.NET Core service; 46 compatible API routes.

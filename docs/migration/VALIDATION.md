@@ -12,13 +12,13 @@ The Windows C#/C/C++ replacement has been exercised with the original interface,
 - The C# screenshot replay command independently recognized the same four rewards without recording reward history.
 - A rebuilt original baseline and the C# app matched core collection counts and identifiers: 810 mastery entries, 162 prime sets, 799 relics, 1,313 visible inventory rows, nine pending builds, 955 craft entries and two farming tasks in the same saved-data comparison. Live inventory has subsequently changed.
 - Visual navigation covered Overview, Mastery, Prime sets, Relics, Fissures, World, Standing, Foundry, Market, Farming, Inventory, Settings and an item detail drawer. Missing market thumbnails were traced to a missing User-Agent and repaired. Settings gear alignment was corrected.
-- The reward preview showed four separate panels at the expected game-relative positions and disappeared on its timer. Additional focus/click-through changes require the final package recheck.
+- The final Windows package showed four separate reward panels at the expected game-relative positions, with transparent gaps and restored foreground focus, and disappeared on its timer. Cross-process click-through is configured but was not exercised by injecting input into the live game.
 - Framework-dependent and self-contained Windows packages passed isolated first-start, restart, settings persistence and clean shutdown checks. Shipping archives exclude PDBs, source files and user databases.
 - Windows installer CI run `42885633509` built both packages and the installer, then passed install, launch, upgrade and uninstall checks, preserving user-data hashes and sentinels.
 
 ## Package measurements
 
-The 20:45 Windows package, including OCR and its licenses, measured 73,090,028 bytes installed / 32,740,111 bytes zipped for the framework-dependent edition, and 183,396,364 / 82,820,064 bytes for the self-contained edition. Final builds may differ slightly. The main executable is approximately 159 KiB. Removing an unnecessary dependency PDB saved approximately 91.5 MiB installed. Comparing only launcher executable sizes omits runtimes, libraries and OCR data.
+The 21:02 Windows package, including OCR and its licenses, measured 73,099,373 bytes installed / 32,744,484 bytes zipped for the framework-dependent edition, and 183,405,709 / 82,824,437 bytes for the self-contained edition. Both editions passed isolated startup, settings persistence, restart and shutdown checks. The main executable is approximately 159 KiB. Removing an unnecessary dependency PDB saved approximately 91.5 MiB installed. Comparing only launcher executable sizes omits runtimes, libraries and OCR data.
 
 ## Limits of the evidence
 
