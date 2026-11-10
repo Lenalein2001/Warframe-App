@@ -42,6 +42,14 @@ public static class ServiceTests
             var signals = GameLog.Parse("0.1 Sys [Info]: Logged in Test\ue000").ToArray(); Equal("Test", signals.Single().Value); Equal<string?>(null, signals.Single().Id);
             Equal("0123456789abcdef01234567", GameLog.Parse("Logged in Test (0123456789abcdef01234567)").Single().Id);
             Equal(0, GameLog.Parse("Remote player 0123456789abcdef01234567 joined").Count());
+            Equal("sync", GameLog.Parse("EndOfMatch.lua: Mission Succeeded").Single().Kind);
+            Equal("duviri-item", GameLog.Parse("MapRedux.lua: /Lotus/Powersuits/Paladin/Paladin generated as an unowned Cave selection for category: 3").Single().Kind);
+            Equal("rewards", GameLog.Parse("ProjectionRewardChoice.lua: Got rewards").Single().Kind);
+            const string ownId = "0123456789abcdef01234567";
+            Equal(true, GameLog.Candidates("Test\ue000 " + ownId, "Test").Single().Sure);
+            Equal(0, GameLog.Candidates("Test2 " + ownId, "Test").Count());
+            Equal(false, GameLog.Candidates("Test " + ownId + " abcdef0123456789abcdef01", "Test").First().Sure);
+            Equal(true, GameLog.Candidates("VoidProjections: Sending reward info from " + ownId + " to host!", null).Single().Sure);
         });
         test("Memory JSON recovery never persists unrecognized secret fields", () =>
         {

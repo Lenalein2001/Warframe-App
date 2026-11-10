@@ -21,6 +21,14 @@ public sealed partial class CompanionRuntime
     private readonly List<JsonNode> duviri = [];
     public event Action? RewardScreenOpened;
     public event Action? RewardScreenClosed;
+    private void LinkLogAccount(AccountState account, string id)
+    {
+        if (account.Id != null && account.Id != id) return;
+        if (snapshots.Current(account.Key) is { } saved && snapshots.Current(id) == null)
+            snapshots.Commit(saved with { AccountId = id, IdentityVerified = false });
+        account.Id = id;
+        account.Source = "EE.log";
+    }
     private void LogSignal(LogSignal signal)
     {
         lock (sync)
@@ -28,15 +36,29 @@ public sealed partial class CompanionRuntime
             if (signal.Kind == "login")
             {
                 var next = JsonSerializer.Deserialize<RegistryState>(JsonSerializer.Serialize(registry, J.Options), J.Options)!;
-                var account = next.Accounts.FirstOrDefault(a => signal.Id != null && a.Id == signal.Id) ?? next.Accounts.FirstOrDefault(a => string.Equals(a.Name, signal.Value, StringComparison.OrdinalIgnoreCase));
+                var account = next.Accounts.FirstOrDefault(a => signal.Id != null && a.Id == signal.Id) ?? next.Accounts.FirstOrDefault(a => string.Equals(a.Name, signal.Value, StringComparison.OrdinalIgnoreCase) && (signal.Id == null || a.Id == null || a.Id == signal.Id));
                 if (account == null) { account = new() { Key = "account-" + Guid.NewGuid().ToString("N"), Name = signal.Value, Id = signal.Id, Source = "EE.log" }; next.Accounts.Add(account); }
-                account.Seen = signal.Time ?? account.Seen; if (signal.Id != null) account.Id = signal.Id;
+                account.Seen = signal.Time ?? account.Seen; if (signal.Id != null) LinkLogAccount(account, signal.Id);
                 playingKey = account.Key; next.Active = account.Key; SaveRegistry(next); memoryRequested = true;
             }
             else if (signal.Kind == "identity" && playingKey != null)
             {
                 var account = registry.Accounts.FirstOrDefault(a => a.Key == playingKey);
-                if (account?.Id == null && account != null) { account.Id = signal.Id; account.Source = "EE.log"; SaveRegistry(registry); }
+                if (account?.Id == null && account != null && signal.Id != null && !registry.Accounts.Any(a => a.Id == signal.Id)) { LinkLogAccount(account, signal.Id); SaveRegistry(registry); }
+            }
+            else if (signal.Kind == "candidate" && playingKey != null && signal.Id != null)
+            {
+                var account = registry.Accounts.FirstOrDefault(a => a.Key == playingKey);
+                if (account != null && !registry.Accounts.Any(a => a.Id == signal.Id))
+                {
+                    if (signal.Sure && account.Id == null) LinkLogAccount(account, signal.Id);
+                    else if (account.Evidence.All(e => e.Id != signal.Id))
+                    {
+                        account.Evidence.Add(new(signal.Id, signal.Value ?? "Game log account candidate."));
+                        if (account.Evidence.Count > 12) account.Evidence.RemoveRange(0, account.Evidence.Count - 12);
+                    }
+                    SaveRegistry(registry);
+                }
             }
             else if (signal.Kind == "badge" && playingKey != null)
             { var account = registry.Accounts.FirstOrDefault(a => a.Key == playingKey); if (account != null) { account.Badge = signal.Rank; account.BadgeMax = signal.RankMax; SaveRegistry(registry); } }

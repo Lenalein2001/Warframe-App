@@ -11,6 +11,7 @@
 #else
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #endif
 
 namespace {
@@ -96,6 +97,32 @@ public:
         return result;
     }
 };
+}
+
+int wfc_file_identity(const char* path, std::uint64_t* device, std::uint64_t* file) noexcept {
+    if (!path || !device || !file) return 0;
+    try {
+#ifdef _WIN32
+        const auto size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, nullptr, 0);
+        if (!size) return 0;
+        std::vector<wchar_t> wide(static_cast<std::size_t>(size));
+        if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide.data(), size)) return 0;
+        const auto handle = CreateFileW(wide.data(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (handle == INVALID_HANDLE_VALUE) return 0;
+        BY_HANDLE_FILE_INFORMATION info{};
+        const auto ok = GetFileInformationByHandle(handle, &info);
+        CloseHandle(handle);
+        if (!ok) return 0;
+        *device = info.dwVolumeSerialNumber;
+        *file = (static_cast<std::uint64_t>(info.nFileIndexHigh) << 32) | info.nFileIndexLow;
+#else
+        struct stat info{};
+        if (stat(path, &info) != 0) return 0;
+        *device = static_cast<std::uint64_t>(info.st_dev);
+        *file = static_cast<std::uint64_t>(info.st_ino);
+#endif
+        return 1;
+    } catch (...) { return 0; }
 }
 
 int wfc_scan_memory(int pid, wfc_memory_candidate candidate, wfc_memory_progress progress, void* context) noexcept {

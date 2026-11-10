@@ -33,6 +33,13 @@ public static class IntegrationTests
                 Check(signals.Single().Value == "Renée", "Split UTF-8 player name was corrupted");
                 File.AppendAllText(path, "OpenVoidProjectionRewardScreen\n"); log.Poll(path);
                 Check(signals.Last().Kind == "rewards", "New reward screen was suppressed");
+                var count = signals.Count;
+                File.AppendAllText(path, "ProjectionRewardChoice.lua: Got rewards\n"); log.Poll(path);
+                Check(signals.Count == count, "One screen triggered duplicate reads");
+                File.Move(path, path + ".old");
+                File.WriteAllText(path, "Sys [Info]: Logged in Replacement\nOpenVoidProjectionRewardScreen\n" + new string(' ', 400) + "\n");
+                log.Poll(path);
+                Check(signals.Count == count + 1 && signals.Last().Value == "Replacement", "Replacement file identity was missed or historical rewards replayed");
             }
             finally { Directory.Delete(directory, true); }
         });

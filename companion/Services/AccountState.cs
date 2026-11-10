@@ -7,6 +7,7 @@ namespace WarframeCompanion.Services;
 
 public sealed record ManualCount(long Count, double Time);
 public sealed record FarmingTask(string Uid, long? Target, double Added);
+public sealed record AccountEvidence(string Id, string Line);
 public sealed class ManualState
 {
     public Dictionary<string, ManualCount> Counts { get; set; } = [];
@@ -28,6 +29,7 @@ public sealed class AccountState
     public long? Badge { get; set; }
     public long? BadgeMax { get; set; }
     public JsonNode? Duviri { get; set; }
+    public List<AccountEvidence> Evidence { get; set; } = [];
 }
 
 public sealed class StateStore

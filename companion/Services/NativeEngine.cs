@@ -6,6 +6,13 @@ namespace WarframeCompanion.Services;
 
 public static class NativeEngine
 {
+    public static (ulong Device, ulong File) FileIdentity(string path)
+    {
+        if (FileIdentityNative(path, out var device, out var file) != 1) throw new IOException("Cannot identify the game log file.");
+        return (device, file);
+    }
+    [DllImport("warframe_native", EntryPoint = "wfc_file_identity", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int FileIdentityNative([MarshalAs(UnmanagedType.LPUTF8Str)] string path, out ulong device, out ulong file);
     static NativeEngine() { if (Version() != 1) throw new IOException("Native engine ABI does not match the application."); }
     public static byte[] Unlzma(byte[] input)
     {
