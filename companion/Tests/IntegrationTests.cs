@@ -12,6 +12,19 @@ public static class IntegrationTests
     private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
     public static void Register(Action<string, Action> test)
     {
+        test("Platform changes reuse bounded market clients while existing views remain valid", () => InDirectory(directory =>
+        {
+            var runtime = new CompanionRuntime(directory, true);
+            try
+            {
+                var pc = runtime.View().Market;
+                foreach (var platform in new[] { "ps4", "xb1", "swi", "pc", "ps4", "pc" })
+                    runtime.Post("settings", new JsonObject { ["platform"] = platform }, CancellationToken.None).GetAwaiter().GetResult();
+                Check(ReferenceEquals(pc, runtime.View().Market), "Returning to a platform replaced its still-used market client.");
+                Check(J.S(runtime.GetSettings(), "platform") == "pc", "Platform setting was not persisted.");
+            }
+            finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
         test("Compositor bindings normalize modifiers and replace only the managed Lua block", () =>
         {
             Check(CompositorBindings.Line("sway", "Win+Alt+F9", "curl") == "bindsym Mod4+Mod1+F9 exec curl", "Sway modifiers differ");

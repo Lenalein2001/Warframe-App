@@ -31,6 +31,9 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
     private Task? background;
     public Catalog Catalog { get; private set; } = new();
     public MarketService Market { get; private set; }
+    // Settings permit four platforms. Keep one client per platform so in-flight views
+    // remain valid when the user changes platform, without retaining unbounded clients.
+    private readonly Dictionary<string, MarketService> platformMarkets = [];
     public WorldService World { get; private set; }
     public ArbitrationService Arbitrations { get; }
     public RivenService Rivens { get; }
@@ -62,6 +65,7 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
         Art = new(Path.Combine(DataDirectory, "cache", "art"), offline);
         Arbitrations = new(cache);
         Market = new(Path.Combine(DataDirectory, "cache"), J.S(settings, "platform") ?? "pc", offline); World = new(cache, J.S(settings, "platform") ?? "pc"); Rivens = new(cache);
+        platformMarkets[J.S(settings, "platform") ?? "pc"] = Market;
         Rivens.SetPlatform(J.S(settings, "platform") ?? "pc");
     }
     public JsonObject GetSettings() { lock (sync) return (JsonObject)settings.DeepClone(); }
@@ -183,12 +187,14 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
                     var updated = Settings.Patch(settings, body);
                     if (J.S(updated, "platform") != J.S(settings, "platform"))
                     {
-                        var platform = J.S(updated, "platform")!; var nextMarket = new MarketService(Path.Combine(DataDirectory, "cache"), platform, Offline);
+                        var platform = J.S(updated, "platform")!;
+                        if (!platformMarkets.TryGetValue(platform, out var nextMarket))
+                            platformMarkets[platform] = nextMarket = new MarketService(Path.Combine(DataDirectory, "cache"), platform, Offline);
                         store.Write("settings", updated); oldMarket = Market; Market = nextMarket; World = new(cache, platform); Rivens.SetPlatform(platform);
                     }
                     if (oldMarket == null) store.Write("settings", updated); settings = updated;
                 }
-                if (oldMarket != null) { await oldMarket.DisposeAsync(); try { await Market.Load(cancellation); } catch (Exception e) when (e is IOException or HttpRequestException or JsonException) { Event("Market metadata is unavailable on the selected platform.", "error"); } await World.Refresh(cancellation); await Rivens.Refresh(J.S(GetSettings(), "platform")!, cancellation); }
+                if (oldMarket != null) { try { await Market.Load(cancellation); } catch (Exception e) when (e is IOException or HttpRequestException or JsonException) { Event("Market metadata is unavailable on the selected platform.", "error"); } await World.Refresh(cancellation); await Rivens.Refresh(J.S(GetSettings(), "platform")!, cancellation); }
                 if (J.Get(body, "hotkey_rewards") != null || J.Get(body, "hotkey_riven") != null) { try { if (OperatingSystem.IsWindows()) RegisterHotkeys?.Invoke(); } catch (InventoryException e) { Event(e.Message, "error"); } }
                 break;
             case "account/set":
@@ -286,6 +292,7 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
         if (memoryScan != null) { try { await memoryScan; } catch (OperationCanceledException) { } }
         if (automaticOcr != null) { try { await automaticOcr; } catch (OperationCanceledException) { } }
         RewardScreenOpened -= StartAutomaticOcr; RewardScreenClosed -= CloseRewards;
-        await Market.DisposeAsync(); Art.Dispose(); cache.Dispose(); profileClient.Dispose(); stop.Dispose(); reload.Dispose(); profileGate.Dispose();
+        foreach (var market in platformMarkets.Values) await market.DisposeAsync();
+        Art.Dispose(); cache.Dispose(); profileClient.Dispose(); stop.Dispose(); reload.Dispose(); profileGate.Dispose();
     }
 }

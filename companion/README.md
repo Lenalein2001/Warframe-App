@@ -1,6 +1,6 @@
 # Warframe Companion C# replacement
 
-The desktop application hosts the original `web/` interface unchanged through Photino, with a C# service layer and native C/C++ image processing, fuzzy matching and export decoding. It does not launch or depend on the Rust backend. This is a replacement candidate under validation, not a completed parity release.
+The desktop application hosts the preserved `web/` interface through Photino, with C# services and native C/C++ process reading, image processing, fuzzy matching and export decoding. The settings gear has an intentional alignment correction. No Rust backend or compiler is used. Platform-specific validation limits are recorded separately.
 
 ## Build and run
 
@@ -24,6 +24,12 @@ Normal desktop startup uses `WarframeCompanion` in the OS local application-data
 `--portable` uses `data` beside the executable. `--data-dir PATH` selects an isolated location. Neither copies legacy data unless `--migrate-legacy` is also supplied. `--offline` disables network fetches and uses cached data. `--headless` runs only the HTTP services; `--no-game` disables game-log watching and automatic game integrations, useful for isolated tests. `--port NUMBER` overrides the saved port.
 
 Partial inventory observations cannot replace confirmed inventory. Older or unordered source timestamps cannot roll it back. Clearing inventory clears its current pointer while retaining audit history. Unknown payload fields are excluded from normalized storage. Memory scanning is read-only and disabled by default. Actual capture depends on game state and OS access.
+
+## Command-line use
+
+`run` is the default command. `--browser` opens the interface in the system browser. `trigger`, `riven` and `quit` contact the running app using its saved port, or `--port NUMBER`. They also accept `--data-dir PATH` to select the settings directory.
+
+`replay IMAGE... [--riven] [--scale PERCENT] [--offline] [--data-dir PATH] [--output JSONL]` reads saved screenshots through the same recognition pipeline without recording reward history or opening overlays. It needs a populated catalog cache or network access. `--output` is useful when invoking the Windows GUI executable from a terminal.
 
 ## Packaging
 

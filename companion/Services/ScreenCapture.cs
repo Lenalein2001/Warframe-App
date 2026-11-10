@@ -8,6 +8,15 @@ namespace WarframeCompanion.Services;
 public sealed record CapturedScreen(SKBitmap Bitmap, int X, int Y, double CoordinateScale = 1) : IDisposable { public void Dispose() => Bitmap.Dispose(); }
 public static class ScreenCapture
 {
+    public static CapturedScreen ReadSaved(string path)
+    {
+        using var stream = File.OpenRead(path);
+        if (stream.Length > 64 * 1024 * 1024) throw new InventoryException("Saved screenshot exceeds 64 MiB.");
+        using var codec = SKCodec.Create(stream);
+        if (codec == null || codec.Info.Width <= 0 || codec.Info.Height <= 0 || (long)codec.Info.Width * codec.Info.Height > 40_000_000)
+            throw new InventoryException("Saved screenshot is invalid or too large.");
+        return new(SKBitmap.Decode(codec) ?? throw new InventoryException("Saved screenshot could not be decoded."), 0, 0);
+    }
     public static string? Which(string name)
     {
         var executable = OperatingSystem.IsWindows() ? name + ".exe" : name;

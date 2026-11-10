@@ -5,7 +5,7 @@ using WarframeCompanion.Persistence;
 if (args.Length == 0 || args is ["--help"])
 {
     Console.WriteLine("""
-        Warframe Companion C# inventory engine — migration preview, not desktop parity
+        Warframe Companion inventory administration utility
 
         validate --file inventory.json --account ACCOUNT [--complete]
         import   --file inventory.json --account ACCOUNT [--complete] [--data-dir DIR | --portable]

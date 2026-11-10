@@ -11,12 +11,19 @@ internal static class Program
     {
         try
         {
+            if (args is ["--help"] or ["-h"])
+            {
+                Console.WriteLine("WarframeCompanion.Desktop [run] [--offline] [--headless | --browser] [--portable | --data-dir PATH] [--no-game] [--port NUMBER]\nWarframeCompanion.Desktop trigger|riven|quit [--port NUMBER] [--data-dir PATH]\nWarframeCompanion.Desktop replay IMAGE... [--riven] [--scale PERCENT] [--offline] [--data-dir PATH] [--output JSONL]");
+                return 0;
+            }
+            if (DesktopCommands.Execute(args).GetAwaiter().GetResult() is { } commandResult) return commandResult;
+            if (args.FirstOrDefault() == "run") args = args[1..];
             var options = new Dictionary<string, string?>();
             for (var i = 0; i < args.Length; i++)
             {
                 var key = args[i];
                 if (options.ContainsKey(key)) throw new ArgumentException("Duplicate option.");
-                if (key is "--offline" or "--portable" or "--headless" or "--no-game" or "--migrate-legacy") options[key] = null;
+                if (key is "--offline" or "--portable" or "--headless" or "--browser" or "--no-game" or "--migrate-legacy") options[key] = null;
                 else if (key is "--data-dir" or "--port" && i + 1 < args.Length) options[key] = args[++i];
                 else throw new ArgumentException("Usage: WarframeCompanion.Desktop [--portable | --data-dir PATH] [--offline] [--headless] [--no-game] [--migrate-legacy] [--port NUMBER]");
             }
@@ -27,7 +34,8 @@ internal static class Program
             var server = CompanionServer.Start(directory, options.ContainsKey("--offline"), port, migrateLegacy: options.ContainsKey("--migrate-legacy") || !options.ContainsKey("--portable") && !options.ContainsKey("--data-dir"), watchGame: !options.ContainsKey("--no-game")).GetAwaiter().GetResult();
             try
             {
-                if (options.ContainsKey("--headless")) { server.WaitForShutdown().GetAwaiter().GetResult(); return 0; }
+                if (options.ContainsKey("--browser")) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(server.Url) { UseShellExecute = true });
+                if (options.ContainsKey("--headless") || options.ContainsKey("--browser")) { server.WaitForShutdown().GetAwaiter().GetResult(); return 0; }
                 var window = new PhotinoWindow { LogVerbosity = 0 }.SetTitle("Warframe App").SetUseOsDefaultSize(false).SetSize(new Size(1280, 860)).Center()
                     .SetContextMenuEnabled(false).SetDevToolsEnabled(false).SetTemporaryFilesPath(Path.Combine(directory, "webview")).Load(server.Url);
                 using var overlay = new NativeOverlay(window, server.Url, Path.GetFullPath(directory), message => server.Runtime.Event(message, "error"));

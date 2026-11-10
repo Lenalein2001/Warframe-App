@@ -27,7 +27,7 @@ public sealed partial class CompanionRuntime
     {
         lock (sync) { var account = registry.Accounts.FirstOrDefault(a => a.Key == playingKey) ?? Active; return new(Catalog, account == null ? null : snapshots.Current(account.Id ?? account.Key), account?.Profile, account?.Manual ?? new(), Market); }
     }
-    public async Task<JsonNode> ScanRewards(bool automatic, CancellationToken cancellation)
+    public async Task<JsonNode> ScanRewards(bool automatic, CancellationToken cancellation, string? savedImage = null, double? imageScale = null)
     {
         if (!await ocrGate.WaitAsync(0, cancellation)) { lock (sync) return rewards.DeepClone(); }
         string? accountKey;
@@ -38,13 +38,13 @@ public sealed partial class CompanionRuntime
             OverlayHidden?.Invoke(); var config = GetSettings(); RewardLayout? layout;
             do
             {
-                screen?.Dispose(); screen = await ScreenCapture.Capture(J.S(config, "screenshot_tool") ?? "auto", cancellation); layout = NativeEngine.Layout(screen.Bitmap, Log.Scale);
-                if (layout != null || !automatic || J.Now - started > 12 || generation != Interlocked.Read(ref rewardGeneration)) break;
+                screen?.Dispose(); screen = savedImage == null ? await ScreenCapture.Capture(J.S(config, "screenshot_tool") ?? "auto", cancellation) : ScreenCapture.ReadSaved(savedImage); layout = NativeEngine.Layout(screen.Bitmap, imageScale ?? Log.Scale);
+                if (layout != null || savedImage != null || !automatic || J.Now - started > 12 || generation != Interlocked.Read(ref rewardGeneration)) break;
                 await Task.Delay(250, cancellation);
             } while (true);
             if (generation != Interlocked.Read(ref rewardGeneration)) return new JsonObject();
             var view = PlayingView(); var names = Catalog.Relics.Values.SelectMany(r => r.Rewards.Values).GroupBy(r => r.Name).Select(g => g.First()).ToDictionary(r => r.Name);
-            var items = new List<JsonNode>(); var text = new List<string>(); var cards = layout?.Cards ?? 4; var unit = layout?.Unit ?? Math.Min(screen.Bitmap.Width / 1920.0, screen.Bitmap.Height / 1080.0) * (Log.Scale ?? 1);
+            var items = new List<JsonNode>(); var text = new List<string>(); var cards = layout?.Cards ?? 4; var unit = layout?.Unit ?? Math.Min(screen.Bitmap.Width / 1920.0, screen.Bitmap.Height / 1080.0) * (imageScale ?? Log.Scale ?? 1);
             if (layout == null && automatic) throw new InventoryException("Reward cards did not become visible before the read timed out.");
             for (var slot = 0; slot < cards; slot++)
             {
@@ -65,7 +65,7 @@ public sealed partial class CompanionRuntime
                 if (accountKey != (playingKey ?? registry.Active) || generation != Interlocked.Read(ref rewardGeneration)) return new JsonObject();
                 rewards = result.DeepClone();
             }
-            if (layout != null && items.Count > 0 && generation == Interlocked.Read(ref rewardGeneration))
+            if (savedImage == null && layout != null && items.Count > 0 && generation == Interlocked.Read(ref rewardGeneration))
             {
                 lock (sync) History.Record(result, accountKey);
                 if (J.B(config["notify"])) Notify("reward:" + J.D(result["t"]), "Relic rewards", string.Join(" · ", items.Select(i => J.S(i, "name") + (J.Get(i, "price") != null ? " " + J.N(i, "price") + "p" : ""))));
@@ -85,13 +85,13 @@ public sealed partial class CompanionRuntime
         { var error = J.Node(new { t = J.Now, items = Array.Empty<object>(), error = e is InventoryException ? e.Message : "Screen capture/OCR failed or timed out." }); lock (sync) rewards = error; return error.DeepClone(); }
         finally { screen?.Dispose(); ocrGate.Release(); }
     }
-    public async Task<JsonNode> ScanRiven(CancellationToken cancellation)
+    public async Task<JsonNode> ScanRiven(CancellationToken cancellation, string? savedImage = null, double? imageScale = null)
     {
         await ocrGate.WaitAsync(cancellation);
         try
         {
-            OverlayHidden?.Invoke(); var config = GetSettings(); using var frame = await ScreenCapture.Capture(J.S(config, "screenshot_tool") ?? "auto", cancellation);
-            var unit = Math.Min(frame.Bitmap.Width / 1920.0, frame.Bitmap.Height / 1080.0) * (Log.Scale ?? 1); var cx = frame.Bitmap.Width / 2.0; var cy = frame.Bitmap.Height / 2.0;
+            OverlayHidden?.Invoke(); var config = GetSettings(); using var frame = savedImage == null ? await ScreenCapture.Capture(J.S(config, "screenshot_tool") ?? "auto", cancellation) : ScreenCapture.ReadSaved(savedImage);
+            var unit = Math.Min(frame.Bitmap.Width / 1920.0, frame.Bitmap.Height / 1080.0) * (imageScale ?? Log.Scale ?? 1); var cx = frame.Bitmap.Width / 2.0; var cy = frame.Bitmap.Height / 2.0;
             var crops = new[] { new SKRectI((int)(cx - 150 * unit), (int)(cy + 70 * unit), (int)(cx + 150 * unit), (int)(cy + 285 * unit)), new SKRectI(0, 0, frame.Bitmap.Width, frame.Bitmap.Height) };
             ParsedRiven best = new(null, []); var raw = "";
             foreach (var crop in crops)
@@ -105,7 +105,7 @@ public sealed partial class CompanionRuntime
             var result = J.Node(new { t = J.Now, weapon = weapon.Name, image = Catalog.ImageUrl(weapon.Image), positives = pos, negatives = neg, unread, stats = graded,
                 overall = graded.Length > 0 && graded.All(g => !g.OutOfRange && !g.SignConflict) ? RivenService.Grade(graded.Average(g => g.Deviation)) : null, traded = Rivens.Traded(weapon.Name), market = (object?)null, marketError = (string?)null, ocr = raw, error = (string?)null });
             lock (sync) riven = result.DeepClone();
-            if (J.B(config["riven_overlay_enabled"])) OverlayRequested?.Invoke(new("riven", result.DeepClone(), frame.X, frame.Y, frame.Bitmap.Width, frame.Bitmap.Height, unit, (int)J.N(config, "riven_overlay_seconds", 20), false, J.S(config, "overlay_backend") ?? "auto", frame.CoordinateScale));
+            if (savedImage == null && J.B(config["riven_overlay_enabled"])) OverlayRequested?.Invoke(new("riven", result.DeepClone(), frame.X, frame.Y, frame.Bitmap.Width, frame.Bitmap.Height, unit, (int)J.N(config, "riven_overlay_seconds", 20), false, J.S(config, "overlay_backend") ?? "auto", frame.CoordinateScale));
             if (!Offline)
             {
                 try { result["market"] = await Market.RivenListings(weapon, graded.Where(g => !g.Negative).Select(g => g.Stat), cancellation); }
