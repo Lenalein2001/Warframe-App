@@ -9,6 +9,17 @@ public static class ServiceTests
     private static JsonNode Json(string value) => JsonNode.Parse(value)!;
     public static void Register(Action<string, Action> test)
     {
+        test("Overlay layout keeps four ordered panels aligned at game scale and monitor origin", () =>
+        {
+            var request = new OverlayRequest("rewards", Json("""{"cards":4}"""), -1920, 80, 1920, 1080, 1, 15, false);
+            var boxes = OverlayLayout.Boxes(request);
+            Equal(4, boxes.Length); Equal(-1440, boxes[0].X); Equal(568, boxes[0].Y);
+            Equal(234, boxes[0].Width); Equal(86, boxes[0].Height);
+            for (var i = 1; i < boxes.Length; i++) Equal(242, boxes[i].X - boxes[i - 1].X);
+            var above = OverlayLayout.Boxes(request with { Above = true });
+            Equal(208, above[0].Y);
+            Equal(true, above.Zip(above.Skip(1)).All(pair => pair.First.Right <= pair.Second.Left));
+        });
         test("Riven constants, count inference, negative grades and sign conflicts", () =>
         {
             Equal(50, RivenService.Data.Stats.Length); Equal(18, RivenService.Data.Stats.Count(s => s.Spliced)); Equal(50, RivenService.Data.Slugs.Count);

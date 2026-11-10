@@ -18,7 +18,9 @@ public sealed class ArtService(string directory, bool offline) : IDisposable
     {
         for (var hops = 0; hops < 4; hops++)
         {
-            var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellation);
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.UserAgent.ParseAdd("WarframeCompanion/0.1 (+https://github.com/Lenalein2001/Warframe-App)");
+            var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellation);
             if ((int)response.StatusCode is not (301 or 302 or 303 or 307 or 308)) return response;
             var location = response.Headers.Location; response.Dispose();
             if (location == null) throw new IOException("Artwork redirect has no destination.");

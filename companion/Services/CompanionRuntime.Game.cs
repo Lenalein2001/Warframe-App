@@ -10,6 +10,7 @@ public sealed partial class CompanionRuntime
     public int? GameProcess { get; private set; }
     public bool ScanRunning { get; private set; }
     public string? ScanError { get; private set; }
+    private JsonNode? lastSuccessfulScan;
     private Task? gameLoop;
     private Task? memoryScan;
     private double nextMemory;
@@ -125,6 +126,7 @@ public sealed partial class CompanionRuntime
         try
         {
             var baseline = (store.Read<string[]>("memory-sections-" + key) ?? []).Union(migratedSections).ToArray();
+            var watch = System.Diagnostics.Stopwatch.StartNew();
             bool Accept(MemoryCapture reading) => (reading.Snapshot.IdentityVerified || LegacyMigration.SameOwner(reading.Snapshot.Xp, known) == true) && new[] { "MiscItems", "Suits", "Recipes", "XPInfo" }.Concat(baseline).All(reading.Sections.Contains);
             var capture = await Task.Run(() => MemoryProvider.Scan(pid, identity, cancellation, Accept), cancellation);
             var owns = capture.Snapshot.IdentityVerified || LegacyMigration.SameOwner(capture.Snapshot.Xp, known) == true;
@@ -134,6 +136,7 @@ public sealed partial class CompanionRuntime
                 if (playingKey != key || GameProcess != pid) { ScanError = "Account changed during capture; reading discarded."; return; }
                 var result = snapshots.Commit(capture.Snapshot with { Complete = complete, IdentityVerified = owns }, cancellation);
                 if (result.Promoted) store.Write("memory-sections-" + key, baseline.Union(capture.Sections).ToArray());
+                if (complete) lastSuccessfulScan = J.Node(new { t = J.Now, stacks = capture.Snapshot.Counts.Count, seconds = Math.Round(watch.Elapsed.TotalSeconds, 1) });
                 ScanError = complete ? null : owns ? "Partial capture retained; confirmed inventory unchanged." : "Capture ownership is unverified; refresh the public profile before capturing.";
                 Event(result.Reason, result.Promoted ? "info" : "error");
             }
