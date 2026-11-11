@@ -13,6 +13,7 @@ public sealed partial class CompanionRuntime
     private JsonNode? lastSuccessfulScan;
     private Task? gameLoop;
     private Task? memoryScan;
+    private Task? automaticProfile;
     private double nextMemory;
     private double lastMemory;
     private double nextAutoProfile;
@@ -163,20 +164,26 @@ public sealed partial class CompanionRuntime
                     memoryRequested = false; lastMemory = J.Now; nextMemory = J.Now + 300;
                     memoryScan = CaptureMemory(pid, stop.Token);
                 }
-                if (!Offline && J.B(config["profile_auto_refresh"]) && J.Now >= nextAutoProfile)
+                if (!Offline && J.B(config["profile_auto_refresh"]) && J.Now >= nextAutoProfile && (automaticProfile == null || automaticProfile.IsCompleted))
                 {
                     nextAutoProfile = J.Now + Math.Max(1, J.N(config, "profile_refresh_minutes", 30)) * 60;
-                    if (Active?.Id != null) await RefreshProfile(stop.Token);
+                    if (Active?.Id != null) automaticProfile = RefreshAutomaticProfile();
                 }
             }
             catch (OperationCanceledException) when (stop.IsCancellationRequested) { break; }
-            catch (OperationCanceledException)
-            { Event("Public profile request timed out; game monitoring will continue.", "error"); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or InventoryException or JsonException or HttpRequestException)
             { Event("Game integration: " + (e is InventoryException ? e.Message : e.GetType().Name), "error"); }
             try { await Task.Delay(TimeSpan.FromSeconds(2), stop.Token); } catch (OperationCanceledException) { break; }
         }
         Log.Signal -= LogSignal;
+    }
+    private async Task RefreshAutomaticProfile()
+    {
+        try { await RefreshProfile(stop.Token); }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
+        catch (OperationCanceledException) { Event("Public profile request timed out; game monitoring will continue.", "error"); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InventoryException or JsonException or HttpRequestException)
+        { Event("Public profile refresh: " + (e is InventoryException ? e.Message : e.GetType().Name), "error"); }
     }
     private async Task CaptureMemory(int pid, CancellationToken cancellation)
     {

@@ -302,6 +302,7 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
     {
         stop.Cancel(); if (background != null) { try { await background; } catch (OperationCanceledException) { } }
         if (gameLoop != null) { try { await gameLoop; } catch (OperationCanceledException) { } }
+        if (automaticProfile != null) { try { await automaticProfile; } catch (OperationCanceledException) { } }
         if (memoryScan != null) { try { await memoryScan; } catch (OperationCanceledException) { } }
         if (automaticOcr != null) { try { await automaticOcr; } catch (OperationCanceledException) { } }
         RewardScreenOpened -= StartAutomaticOcr; RewardScreenClosed -= CloseRewards;

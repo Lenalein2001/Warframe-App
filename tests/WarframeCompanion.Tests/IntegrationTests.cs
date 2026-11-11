@@ -130,6 +130,24 @@ public static class IntegrationTests
             }
             finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
         }));
+        test("Slow public profiles do not delay game log detection", () => InDirectory(directory =>
+        {
+            var path = Path.Combine(directory, "EE.log"); File.WriteAllText(path, "Sys [Info]: Logged in Fixture\n");
+            var store = new StateStore(Path.Combine(directory, "state.sqlite"));
+            store.Write("registry", new RegistryState { Active = "fixture", Accounts = [new() { Key = "fixture", Name = "Fixture", Id = "0123456789abcdef01234567" }] });
+            var settings = Settings.Defaults(); settings["ee_log_path"] = path; settings["profile_auto_refresh"] = true;
+            settings["memory_scan_enabled"] = false; settings["ocr_enabled"] = false; store.Write("settings", settings);
+            var handler = new PendingProfileHandler(); var runtime = new CompanionRuntime(directory, false, false, handler);
+            try
+            {
+                runtime.StartGameWatcher(); Check(handler.Called, "Profile request was not started");
+                File.AppendAllText(path, "OnMasteryIconReady1(Loaded:/Rank19_icon)\n");
+                Check(SpinWait.SpinUntil(() => store.Read<RegistryState>("registry")!.Accounts.Single().Badge == 19, TimeSpan.FromSeconds(8)), "Pending HTTP request blocked game log polling");
+                Check(!handler.Completed, "Profile request completed before polling was exercised");
+            }
+            finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+            Check(handler.Completed, "Shutdown did not cancel and finish the profile request");
+        }));
         test("Log identity resolution rejects incidental IDs and resolves delayed known IDs", () =>
         {
             const string firstId = "0123456789abcdef01234567", secondId = "abcdef0123456789abcdef01";
@@ -330,6 +348,17 @@ public static class IntegrationTests
         public bool Called { get; private set; }
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         { Called = true; return Task.FromException<HttpResponseMessage>(new TaskCanceledException("Synthetic profile timeout")); }
+    }
+    private sealed class PendingProfileHandler : HttpMessageHandler
+    {
+        public bool Called { get; private set; }
+        public bool Completed { get; private set; }
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Called = true;
+            try { await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken); return new(HttpStatusCode.OK); }
+            finally { Completed = true; }
+        }
     }
     public static void RegisterOcr(Action<string, Action> test)
     {
