@@ -37,3 +37,9 @@ Portable archives keep program files in `app/`. Use the top-level launcher and k
 `WarframeCompanion.Desktop trigger`, `riven` and `quit` read the current API credential automatically. Pass `--data-dir PATH` when using a separate profile and `--port NUMBER` for a port override. Start the companion first. Linux users with previously registered curl shortcuts should register them again in Settings after updating; existing custom scripts must supply authentication.
 
 The running app writes `api-<port>.auth` in its data directory with user-only access. For custom curl scripts, use `curl --noproxy '*' -H @/path/to/data/api-8642.auth http://127.0.0.1:8642/api/state`. Never publish this file or put its contents into a command line. It rotates on startup and is removed on clean shutdown. A browser should be opened using the app's `--browser` option to establish its session.
+
+## Startup troubleshooting
+
+Extract the entire portable archive before opening its top-level launcher. Keep the `app/` directory beside it. Opening the same profile twice activates its existing desktop window; headless instances must be stopped before opening that profile in the desktop app. Separate profiles can run with different `--data-dir` and `--port` values.
+
+Windows startup errors use a native message box. Headless commands report errors to stderr. If a data directory has been selected, startup failures can also write `startup-error.log` there; it contains the error type and general recovery instructions, not account or inventory data. The empty `.instance.lock` file is normal and may remain after exit. Do not delete it to bypass a running instance.

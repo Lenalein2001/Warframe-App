@@ -275,7 +275,10 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
                     if (!wanted) a.Manual.Tasks.RemoveAll(t => t.Uid == taskUid); else if (existing == null) a.Manual.Tasks.Add(updated); else a.Manual.Tasks[a.Manual.Tasks.IndexOf(existing)] = updated; }); break;
             case "tasks/clear": var view = View(); var planner = new FarmingPlanner(view); var done = view.Manual.Tasks.Where(t => J.S(planner.Row(t), "state") == "done").Select(t => t.Uid).ToHashSet(); EditAccount(a => a.Manual.Tasks.RemoveAll(t => done.Contains(t.Uid))); return J.Node(new { removed = done.Count });
             case "data/reload": await Reload(cancellation, true); if (Catalog.LoadedAt == null) throw new InventoryException(DataError ?? "Catalog is unavailable."); break;
-            case "window/show": ShowRequested?.Invoke(); break;
+            case "window/show":
+                var shown = Desktop && ShowRequested != null;
+                if (shown) ShowRequested?.Invoke();
+                return J.Node(new { ok = true, shown });
             case "quit": QuitRequested?.Invoke(); break;
             default: throw new NotSupportedException("This service is not attached: " + path);
         }

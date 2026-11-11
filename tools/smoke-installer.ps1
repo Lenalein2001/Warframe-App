@@ -29,8 +29,11 @@ try {
 } finally {
     if (!$process.HasExited) { Stop-Process -Id $process.Id -Force }
 }
+$retiredOcr = Join-Path $destination 'tools/tesseract/obsolete-test-library.dll'
+[IO.File]::WriteAllText($retiredOcr, 'old OCR dependency fixture')
 $settingsHash = (Get-FileHash -LiteralPath (Join-Path $data 'state.sqlite')).Hash
 Install-Candidate
+if (Test-Path -LiteralPath $retiredOcr) { throw 'Upgrade retained an obsolete OCR dependency.' }
 if ((Get-FileHash -LiteralPath (Join-Path $data 'state.sqlite')).Hash -ne $settingsHash) { throw 'Upgrade changed settings.' }
 $uninstall = Start-Process -FilePath (Join-Path $destination 'unins000.exe') -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -WindowStyle Hidden -Wait -PassThru
 if ($uninstall.ExitCode -ne 0 -or (Test-Path -LiteralPath $executable)) { throw 'Uninstall failed.' }

@@ -21,8 +21,15 @@ public sealed class CompanionServer : IAsyncDisposable
     public string Url { get; }
     public string LaunchUrl { get; private set; } = "";
     private Action? clearCredential;
+    private FileStream? profileLease;
     private CompanionServer(WebApplication app, CompanionRuntime runtime, string url) { this.app = app; Runtime = runtime; Url = url; }
     public static async Task<CompanionServer> Start(string directory, bool offline = false, int? port = null, CancellationToken cancellation = default, bool migrateLegacy = false, bool watchGame = true)
+    {
+        var lease = ProfileInstance.Acquire(directory);
+        try { return await StartOwned(directory, offline, port, cancellation, migrateLegacy, watchGame, lease); }
+        catch { lease.Dispose(); throw; }
+    }
+    private static async Task<CompanionServer> StartOwned(string directory, bool offline, int? port, CancellationToken cancellation, bool migrateLegacy, bool watchGame, FileStream lease)
     {
         var runtime = new CompanionRuntime(directory, offline, migrateLegacy); var selectedPort = port ?? (int)J.N(runtime.GetSettings(), "port", 8642);
         if (selectedPort is < 1024 or > 65535) throw new ArgumentOutOfRangeException(nameof(port));
@@ -103,6 +110,7 @@ public sealed class CompanionServer : IAsyncDisposable
         {
             await app.StartAsync(cancellation); LocalApiCredential.Write(directory, selectedPort, token); runtime.Start(watchGame);
             return new(app, runtime, url) {
+                profileLease = lease,
                 LaunchUrl = url + "/session?token=" + token,
                 clearCredential = () => {
                     try { if (LocalApiCredential.Read(directory, selectedPort) == "Bearer " + token) File.Delete(LocalApiCredential.PathFor(directory, selectedPort)); }
@@ -113,5 +121,5 @@ public sealed class CompanionServer : IAsyncDisposable
         catch { await app.DisposeAsync(); await runtime.DisposeAsync(); throw; }
     }
     public Task WaitForShutdown(CancellationToken cancellation = default) => app.WaitForShutdownAsync(cancellation);
-    public async ValueTask DisposeAsync() { try { await app.StopAsync(); await Runtime.DisposeAsync(); await app.DisposeAsync(); } finally { clearCredential?.Invoke(); } }
+    public async ValueTask DisposeAsync() { try { await app.StopAsync(); await Runtime.DisposeAsync(); await app.DisposeAsync(); } finally { try { clearCredential?.Invoke(); } finally { profileLease?.Dispose(); } } }
 }

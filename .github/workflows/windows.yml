@@ -20,6 +20,8 @@ jobs:
       - name: Build and test packages
         shell: pwsh
         run: |
+          python tests/archive.test.py
+          if ($LASTEXITCODE -ne 0) { throw 'Archive tests failed.' }
           ./tools/publish-companion.ps1 -TesseractRoot "$PWD/artifacts/ocr"
           python tests/launcher.test.py src/Native/build/Release
           if ($LASTEXITCODE -ne 0) { throw 'Native launcher tests failed.' }

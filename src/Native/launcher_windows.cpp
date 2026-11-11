@@ -30,9 +30,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     int count = 0;
     auto args = CommandLineToArgvW(GetCommandLineW(), &count);
     if (!args) return static_cast<int>(GetLastError());
+    bool quiet = false;
     bool portable = false;
     bool dataOption = false;
     for (int i = 1; i < count; ++i) {
+        const std::wstring option(args[i]);
+        if (option == L"--headless" || option == L"--browser" || option == L"quit" || option == L"trigger" || option == L"riven" || option == L"replay") quiet = true;
         if (std::wstring(args[i]) == L"--portable") portable = true;
         if (std::wstring(args[i]) == L"--data-dir") { dataOption = true; ++i; }
     }
@@ -61,7 +64,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     STARTUPINFOW startup{}; startup.cb = sizeof(startup);
     PROCESS_INFORMATION process{};
     if (!CreateProcessW(executable.c_str(), command.data(), nullptr, nullptr, FALSE, 0, nullptr,
-                        root.c_str(), &startup, &process)) return static_cast<int>(GetLastError());
+                        root.c_str(), &startup, &process)) {
+        const auto error = GetLastError();
+        if (!quiet) MessageBoxW(nullptr,
+            L"Could not launch Warframe Companion. Extract the entire ZIP into a folder first, and keep the app folder beside this launcher.",
+            L"Warframe Companion", MB_OK | MB_ICONERROR);
+        return static_cast<int>(error);
+    }
     CloseHandle(process.hThread);
     WaitForSingleObject(process.hProcess, INFINITE);
     DWORD code = 1;

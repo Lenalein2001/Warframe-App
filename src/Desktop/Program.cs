@@ -9,6 +9,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        string? dataDirectory = null;
         try
         {
             if (args is ["--help"] or ["-h"])
@@ -30,13 +31,20 @@ internal static class Program
             if (options.ContainsKey("--portable") && options.ContainsKey("--data-dir")) throw new ArgumentException("Choose one data location.");
             var directory = options.GetValueOrDefault("--data-dir") ?? (options.ContainsKey("--portable") ? Path.Combine(AppContext.BaseDirectory, "data") :
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WarframeCompanion"));
+            dataDirectory = Path.GetFullPath(directory);
             var port = options.GetValueOrDefault("--port") is { } p ? int.Parse(p) : (int?)null;
-            var server = CompanionServer.Start(directory, options.ContainsKey("--offline"), port, migrateLegacy: options.ContainsKey("--migrate-legacy") || !options.ContainsKey("--portable") && !options.ContainsKey("--data-dir"), watchGame: !options.ContainsKey("--no-game")).GetAwaiter().GetResult();
+            CompanionServer server;
+            try { server = CompanionServer.Start(directory, options.ContainsKey("--offline"), port, migrateLegacy: options.ContainsKey("--migrate-legacy") || !options.ContainsKey("--portable") && !options.ContainsKey("--data-dir"), watchGame: !options.ContainsKey("--no-game")).GetAwaiter().GetResult(); }
+            catch (ProfileInUseException) when (!options.ContainsKey("--headless") && !options.ContainsKey("--browser"))
+            {
+                if (ProfileInstance.TryShow(directory, port).GetAwaiter().GetResult()) return 0;
+                throw;
+            }
             try
             {
                 if (options.ContainsKey("--browser")) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(server.LaunchUrl) { UseShellExecute = true });
                 if (options.ContainsKey("--headless") || options.ContainsKey("--browser")) { server.WaitForShutdown().GetAwaiter().GetResult(); return 0; }
-                var window = new PhotinoWindow { LogVerbosity = 0 }.SetIconFile(Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "icon.ico" : "icon.png")).SetTitle("Warframe App").SetUseOsDefaultSize(false).SetSize(new Size(1280, 860)).Center()
+                var window = new PhotinoWindow { LogVerbosity = 0 }.SetIconFile(Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "icon.ico" : "icon.png")).SetTitle("Warframe Companion").SetUseOsDefaultSize(false).SetSize(new Size(1280, 860)).Center()
                     .SetContextMenuEnabled(false).SetDevToolsEnabled(false).SetTemporaryFilesPath(Path.Combine(directory, "webview")).Load(server.LaunchUrl);
                 using var overlay = new NativeOverlay(window, server.Url, Path.GetFullPath(directory), message => server.Runtime.Event(message, "error"));
                 using var hotkeys = new NativeHotkeys(server.Runtime, server.Url);
@@ -57,7 +65,8 @@ internal static class Program
         catch (Exception e)
         {
             // Startup diagnostics never contain payloads or account identifiers.
-            Console.Error.WriteLine("Could not start Warframe Companion: " + e.GetType().Name + ". Check the runtime, port and data directory.");
+            StartupFailure.Report(e, dataDirectory, !args.Contains("--headless") && !args.Contains("--browser") &&
+                !args.Any(a => a is "quit" or "trigger" or "riven" or "replay"));
             if (Environment.GetEnvironmentVariable("WFC_STARTUP_DIAGNOSTICS") == "1") Console.Error.WriteLine(e);
             return 1;
         }

@@ -51,14 +51,11 @@ foreach ($selfContained in @($false, $true)) {
     } else {
         Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging/linux/Portable.sh') -Destination $portable
     }
-    if ($Runtime.StartsWith('win-')) {
-        $archive = "$destination.zip"
-        Compress-Archive -Path "$portable/*" -DestinationPath $archive
-    } else {
-        $archive = "$destination.tar.gz"
-        & python (Join-Path $PSScriptRoot 'archive-companion.py') $portable $archive
-        if ($LASTEXITCODE -ne 0) { throw 'Archive creation failed.' }
-    }
+    $label = if ($selfContained) { 'portable' } else { 'framework-dependent' }
+    $extension = if ($Runtime.StartsWith('win-')) { 'zip' } else { 'tar.gz' }
+    $archive = Join-Path $outputRoot "WarframeCompanion-$Runtime-$label.$extension"
+    & python (Join-Path $PSScriptRoot 'archive-companion.py') $portable $archive
+    if ($LASTEXITCODE -ne 0) { throw 'Archive creation failed.' }
     $files = @(Get-ChildItem -LiteralPath $destination -Recurse -File)
     $measurements += [PSCustomObject]@{
         edition = $edition
@@ -66,6 +63,7 @@ foreach ($selfContained in @($false, $true)) {
         requiresAspNetCore10 = -not $selfContained
         fileCount = $files.Count
         installedBytes = ($files | Measure-Object -Property Length -Sum).Sum
+        archive = [IO.Path]::GetFileName($archive)
         archiveBytes = (Get-Item -LiteralPath $archive).Length
         sha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
         scope = 'Desktop C# replacement candidate; see validation report for outstanding live-platform checks'

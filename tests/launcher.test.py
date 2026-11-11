@@ -37,4 +37,6 @@ with tempfile.TemporaryDirectory(prefix='wfc-launch-') as temp:
     assert run(['--data-dir', '--portable']) == ['--data-dir', '--portable']
     explicit = 'C:\\path with space\\'
     assert run(['--data-dir', explicit, 'literal"quote']) == ['--data-dir', explicit, 'literal"quote']
+    (root / 'app/WarframeCompanion.Desktop.exe').unlink()
+    run(['--headless'], 2)
 print('Native launcher: no console, profile selection, Unicode paths, argument quoting and exit codes passed.')

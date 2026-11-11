@@ -246,6 +246,26 @@ public static class IntegrationTests
             Check(!GameLog.Parse("OnMasteryIconReady1(Loaded:/Rank99999999999999999999_icon)").Any(), "Overflow rank accepted");
             Check(!GameLog.Parse("RollDuviriOffers /Lotus/Item generated as an owned Cave selection for category: 99999999999999999999").Any(s => s.Kind == "duviri-item"), "Overflow category accepted");
         });
+        test("Profile ownership prevents duplicate writers and authenticates window activation", () => InDirectory(directory =>
+        {
+            using var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port; listener.Stop();
+            var server = CompanionServer.Start(directory, offline: true, port: port, watchGame: false).GetAwaiter().GetResult();
+            try
+            {
+                var credential = LocalApiCredential.Read(directory, port);
+                try { using var duplicate = ProfileInstance.Acquire(directory); throw new Exception("Duplicate profile lock succeeded"); }
+                catch (ProfileInUseException) { }
+                Check(LocalApiCredential.Read(directory, port) == credential, "Duplicate startup replaced credentials");
+                Check(!ProfileInstance.TryShow(directory, port).GetAwaiter().GetResult(), "Headless instance pretended to show a window");
+                var shown = 0; server.Runtime.Desktop = true; server.Runtime.ShowRequested += () => shown++;
+                Check(ProfileInstance.TryShow(directory, port).GetAwaiter().GetResult() && shown == 1, "Authenticated activation failed");
+                File.WriteAllText(LocalApiCredential.PathFor(directory, port), "Authorization: Bearer " + new string('0', 64));
+                Check(!ProfileInstance.TryShow(directory, port).GetAwaiter().GetResult() && shown == 1, "Invalid credential activated a window");
+            }
+            finally { server.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+            using var reopened = ProfileInstance.Acquire(directory);
+        }));
         test("API credentials rotate, stay private and are removed on shutdown", () => InDirectory(directory =>
         {
             using var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start();

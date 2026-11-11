@@ -5,7 +5,7 @@ version=${1:?Supply a release version}
 pwsh -NoProfile -File tools/publish-companion.ps1 -Runtime linux-x64
 package=$(find artifacts -maxdepth 1 -type d -name 'companion-linux-x64-*' | sort | tail -1)
 mkdir -p artifacts/linux-release
-cp "$package/self-contained.tar.gz" artifacts/linux-release/WarframeCompanion-linux-x64-portable.tar.gz
+cp "$package/WarframeCompanion-linux-x64-portable.tar.gz" artifacts/linux-release/WarframeCompanion-linux-x64-portable.tar.gz
 stage=$(mktemp -d)
 trap 'rm -rf -- "$stage"' EXIT
 mkdir -p "$stage/opt/warframe-companion" "$stage/usr/bin" "$stage/usr/share/applications" "$stage/DEBIAN"

@@ -13,3 +13,5 @@ To update, close the companion, back up your profile, and extract the new packag
 To bring an installed profile with you, close the companion and copy the contents of `%LOCALAPPDATA%\WarframeCompanion` (Windows) or `~/.local/share/WarframeCompanion` (Linux) into the package's `data/` folder. Back up both folders first.
 
 Always use the top-level launcher: starting the executable inside `app/` directly selects the normal per-user profile.
+
+If startup fails, confirm that you extracted the entire archive and kept the launcher beside `app/`. Windows displays a startup error; failures after opening the profile also write a short `startup-error.log` there, without account or inventory contents. A profile already running in the desktop app is brought forward instead of starting a second backend.

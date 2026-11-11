@@ -16,7 +16,7 @@ def inventory(root):
         if not path.is_file() or path == root / NAME:
             continue
         relative = path.relative_to(root).as_posix()
-        if any(part in ('.git', 'data', 'webview', 'artifacts', '__pycache__') for part in path.relative_to(root).parts) or (path.name.startswith('api-') and '.auth' in path.name) or path.suffix.lower() in ('.sqlite', '.sqlite-wal', '.sqlite-shm', '.sqlite-journal', '.auth', '.pdb', '.rs', '.pyc'):
+        if path.name in ('.instance.lock', 'startup-error.log') or any(part in ('.git', 'data', 'webview', 'artifacts', '__pycache__') for part in path.relative_to(root).parts) or (path.name.startswith('api-') and '.auth' in path.name) or path.suffix.lower() in ('.sqlite', '.sqlite-wal', '.sqlite-shm', '.sqlite-journal', '.auth', '.pdb', '.rs', '.pyc'):
             raise ValueError('Release contains private or development files: ' + relative)
         with path.open('rb') as stream:
             result[relative] = {'bytes': path.stat().st_size, 'sha256': hashlib.file_digest(stream, 'sha256').hexdigest()}

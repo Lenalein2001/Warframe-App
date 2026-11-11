@@ -23,14 +23,16 @@ def request(port, route, body=None):
         return json.load(response) if route.startswith('api/') else response.read()
 
 for edition in ('framework-dependent', 'self-contained'):
-    with zipfile.ZipFile(packages / (edition + '.zip')) as archive:
+    label = 'portable' if edition == 'self-contained' else edition
+    archive_path = packages / f'WarframeCompanion-win-x64-{label}.zip'
+    with zipfile.ZipFile(archive_path) as archive:
         names = [name.lower().replace('\\', '/') for name in archive.namelist()]
         assert not any(name.endswith(('.pdb', '.rs', '.sqlite', '.sqlite-wal', '.sqlite-shm'))
                        or name.startswith(('data/', 'artifacts/', 'webview/')) for name in names)
     with tempfile.TemporaryDirectory(prefix='wfc-package-') as temporary:
         data = pathlib.Path(temporary)
         extracted = data / 'package'
-        with zipfile.ZipFile(packages / (edition + '.zip')) as archive:
+        with zipfile.ZipFile(archive_path) as archive:
             archive.extractall(extracted)
         subprocess.run([sys.executable, str(pathlib.Path(__file__).with_name('release-manifest.py')), str(extracted / 'app'), '--verify'], check=True)
         assert {p.name for p in extracted.iterdir()} == {'app', 'README.md', 'Start Warframe Companion.exe'}
@@ -58,6 +60,11 @@ for edition in ('framework-dependent', 'self-contained'):
                             time.sleep(.2)
                     assert state['accounts'] == [], 'Package accessed real account data'
                     assert b'<html' in request(port, ''), 'Embedded interface missing'
+                    duplicate = subprocess.run([str(executable), '--headless', '--offline', '--no-game',
+                                                '--data-dir', str(data), '--port', str(port)],
+                                               capture_output=True, timeout=15, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                    assert duplicate.returncode != 0, 'Duplicate process acquired the same profile'
+                    assert request(port, 'api/state')['accounts'] == [], 'Duplicate launch damaged the running instance'
                     settings = request(port, 'api/settings')
                     if restart:
                         assert settings['notify'] is True and settings['hotkey_rewards'] == ''

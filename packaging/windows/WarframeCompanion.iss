@@ -41,6 +41,11 @@ CloseApplications=yes
 RestartApplications=no
 LicenseFile=..\..\LICENSE
 
+; Retire obsolete program files before copying the new payload. Never target profile storage.
+[InstallDelete]
+Type: files; Name: "{app}\tools\tesseract\*.dll"
+Type: files; Name: "{app}\Portable.cmd"
+
 [Files]
 Source: "{#PayloadDirectory}\*"; DestDir: "{app}"; Excludes: "*.pdb,*.sqlite,*.sqlite-wal,*.sqlite-shm,Portable.cmd"; Flags: ignoreversion recursesubdirs createallsubdirs
 

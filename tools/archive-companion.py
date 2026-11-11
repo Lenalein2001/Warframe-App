@@ -1,10 +1,20 @@
-"""Produce usable Linux permissions even when cross-publishing on Windows."""
+"""Create standard, compressed archives without executable packing or runtime extraction."""
 import pathlib
 import sys
 import tarfile
+import zipfile
 
 source = pathlib.Path(sys.argv[1]).resolve()
 destination = pathlib.Path(sys.argv[2]).resolve()
+if destination.suffix == ".zip":
+    with zipfile.ZipFile(destination, "x", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        for path in sorted(source.rglob("*")):
+            if path.is_symlink():
+                raise ValueError("Unexpected symbolic link in publish output")
+            if path.is_file():
+                archive.write(path, path.relative_to(source).as_posix())
+    sys.exit(0)
+
 with tarfile.open(destination, "x:gz") as archive:
     for path in sorted(source.rglob("*")):
         if path.is_symlink():
