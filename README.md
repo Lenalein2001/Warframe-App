@@ -9,7 +9,7 @@ Inventory, mastery, crafting and mission rewards in one desktop app.
 [![Linux](https://github.com/Lenalein2001/Warframe-App/actions/workflows/linux.yml/badge.svg?branch=senpai)](https://github.com/Lenalein2001/Warframe-App/actions/workflows/linux.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-7bb6b1.svg)](LICENSE)
 
-[Download](https://github.com/Lenalein2001/Warframe-App/releases/latest) · [Usage](docs/USAGE.md) · [Development](docs/DEVELOPMENT.md) · [Report a bug](https://github.com/Lenalein2001/Warframe-App/issues)
+[Download](https://github.com/Lenalein2001/Warframe-App/releases/latest) | [Usage](docs/USAGE.md) | [Development](docs/DEVELOPMENT.md) | [Report a bug](https://github.com/Lenalein2001/Warframe-App/issues)
 
 </div>
 
@@ -87,7 +87,7 @@ The app combines several sources; none should be mistaken for a complete officia
 | Optional process-memory capture | Inventory found in the running game through read-only OS access. Disabled by default; existing choices are retained. |
 | Screenshot/OCR fallback | Visible relic reward names and riven cards, processed locally. |
 
-## What the app does�and does not do
+## What the app does and does not do
 
 The companion helps you inspect information and plan your next action. It **does not write to Warframe's process memory, inject code, modify game files, simulate gameplay input, sell items, craft items, automate missions, or log in to game services with your credentials**. Editing counts or clearing inventory in the companion changes its own records, not your in-game inventory. Relic-name copying writes to the clipboard; you choose when to paste it.
 
