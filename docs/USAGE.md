@@ -1,6 +1,6 @@
 # Warframe Companion
 
-Launch `WarframeCompanion.Desktop.exe` for normal per-user storage, or `Portable.cmd` to keep settings and data beside the executable. Windows requires WebView2. The framework-dependent edition also requires the .NET 10 and ASP.NET Core 10 runtimes; the self-contained edition includes them.
+Launch `WarframeCompanion.Desktop.exe` for normal per-user storage, or `Start Warframe Companion.cmd` in a portable package to keep settings and data in its `data/` folder. Windows requires WebView2. The framework-dependent edition also requires the .NET 10 and ASP.NET Core 10 runtimes; the self-contained edition includes them.
 
 ## Inventory and crafting uses
 
@@ -27,5 +27,7 @@ Wayland overlays require layer-shell support or an available XWayland fallback. 
 ## Storage
 
 Normal startup uses `%LOCALAPPDATA%\WarframeCompanion` on Windows and copies legacy data on the first launch. Original files are retained. Back up the data directory before moving it between machines. Do not run multiple instances against the same port.
+
+Portable archives keep program files in `app/`. Use the top-level launcher and keep `data/` when updating. To bring an installed profile into a portable copy, close the app and copy the contents of its normal data directory into the portable `data/` directory first.
 
 `--data-dir PATH` selects another location; `--offline` uses cached data; `--headless` runs without a desktop window. Full build and command-line documentation is in [the repository](https://github.com/Lenalein2001/Warframe-App/tree/senpai/docs).

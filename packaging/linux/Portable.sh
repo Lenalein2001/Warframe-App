@@ -1,4 +1,4 @@
 #!/bin/sh
 set -eu
 cd -- "$(dirname -- "$0")"
-exec ./WarframeCompanion.Desktop --portable "$@"
+exec ./app/WarframeCompanion.Desktop --data-dir "$PWD/data" "$@"

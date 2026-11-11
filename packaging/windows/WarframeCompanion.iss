@@ -8,7 +8,7 @@
 [Setup]
 AppId={{6D29E832-E0CD-4E76-BA73-A379438BFB5C}
 AppName=Warframe Companion
-AppVersion=0.1.0
+AppVersion=0.1.1
 AppPublisher=Lenalein2001
 AppPublisherURL=https://github.com/Lenalein2001/Warframe-App
 DefaultDirName={localappdata}\Programs\WarframeCompanion

@@ -39,12 +39,23 @@ foreach ($selfContained in @($false, $true)) {
         Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging/linux/Portable.sh') -Destination $destination
     }
     Copy-Item -LiteralPath (Join-Path $repoRoot 'web/fonts/OFL-Rajdhani.txt'), (Join-Path $repoRoot 'web/fonts/OFL-SourceSans3.txt') -Destination (Join-Path $destination 'licenses')
+    $portable = Join-Path $outputRoot "$edition-portable"
+    New-Item -ItemType Directory -Path $portable | Out-Null
+    Copy-Item -LiteralPath $destination -Destination (Join-Path $portable 'app') -Recurse
+    $innerLauncher = Join-Path $portable ('app/' + $(if ($Runtime.StartsWith('win-')) { 'Portable.cmd' } else { 'Portable.sh' }))
+    Remove-Item -LiteralPath $innerLauncher
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging/PORTABLE.md') -Destination (Join-Path $portable 'README.md')
+    if ($Runtime.StartsWith('win-')) {
+        '@echo off' + "`r`n" + 'start "" "%~dp0app\WarframeCompanion.Desktop.exe" --data-dir "%~dp0data" %*' + "`r`n" | Set-Content -LiteralPath (Join-Path $portable 'Start Warframe Companion.cmd')
+    } else {
+        Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging/linux/Portable.sh') -Destination $portable
+    }
     if ($Runtime.StartsWith('win-')) {
         $archive = "$destination.zip"
-        Compress-Archive -Path "$destination/*" -DestinationPath $archive
+        Compress-Archive -Path "$portable/*" -DestinationPath $archive
     } else {
         $archive = "$destination.tar.gz"
-        & python (Join-Path $PSScriptRoot 'archive-companion.py') $destination $archive
+        & python (Join-Path $PSScriptRoot 'archive-companion.py') $portable $archive
         if ($LASTEXITCODE -ne 0) { throw 'Archive creation failed.' }
     }
     $files = @(Get-ChildItem -LiteralPath $destination -Recurse -File)

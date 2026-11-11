@@ -22,6 +22,7 @@ public sealed class GameLog
     private bool rewardOpen;
     public event Action<LogSignal>? Signal;
     public static string StripGlyphs(string text) => new(text.Where(c => c is < '\ue000' or > '\uf8ff').ToArray());
+    public static string? PlayerName(string? text) => text == null ? null : StripGlyphs(text).Trim();
     public static IEnumerable<LogSignal> Candidates(string line, string? player)
     {
         var named = !string.IsNullOrWhiteSpace(player) && Regex.IsMatch(line, @"(?<![\p{L}\p{N}_])" + Regex.Escape(StripGlyphs(player)) + @"(?![\p{L}\p{N}_])");

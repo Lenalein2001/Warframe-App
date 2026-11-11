@@ -26,11 +26,15 @@ for edition in ('framework-dependent', 'self-contained'):
                        or name.startswith(('data/', 'artifacts/', 'webview/')) for name in names)
     with tempfile.TemporaryDirectory(prefix='wfc-package-') as temporary:
         data = pathlib.Path(temporary)
+        extracted = data / 'package'
+        with zipfile.ZipFile(packages / (edition + '.zip')) as archive:
+            archive.extractall(extracted)
+        assert {p.name for p in extracted.iterdir()} == {'app', 'README.md', 'Start Warframe Companion.cmd'}
         for restart in (False, True):
             with socket.socket() as listener:
                 listener.bind(('127.0.0.1', 0))
                 port = listener.getsockname()[1]
-            executable = packages / edition / 'WarframeCompanion.Desktop.exe'
+            executable = extracted / 'app' / 'WarframeCompanion.Desktop.exe'
             with (data / 'stdout.log').open('w') as out, (data / 'stderr.log').open('w') as err:
                 started = time.monotonic()
                 process = subprocess.Popen([str(executable), '--headless', '--offline', '--no-game',

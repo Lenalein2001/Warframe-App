@@ -113,6 +113,36 @@ public static class IntegrationTests
             Check(updated.Text.StartsWith("-- User configuration", StringComparison.Ordinal) && updated.Text.EndsWith("-- User footer\n", StringComparison.Ordinal) && !updated.Text.Contains("hl.bind"), "Disabling keys changed user configuration");
             try { CompositorBindings.MergeLua("-- >>> warframeproject hotkeys (managed)", []); throw new Exception("Broken managed block accepted"); } catch (InventoryException) { }
         });
+        test("Platform glyphs repair empty duplicate accounts without losing linked inventory", () => InDirectory(directory =>
+        {
+            const string id = "0123456789abcdef01234567";
+            var store = new StateStore(Path.Combine(directory, "state.sqlite"));
+            var original = new RegistryState { Active = "duplicate", Accounts = [
+                new() { Key = "linked", Id = id, Name = "FixturePlayer\ue000" },
+                new() { Key = "duplicate", Name = "FixturePlayer" },
+                new() { Key = "other", Id = "abcdef0123456789abcdef01", Name = "Other" },
+                new() { Key = "edited", Name = "FixturePlayer", Manual = new() { Pinned = ["/Keep"] } }
+            ] };
+            store.Write("registry", original);
+            Check(StateStore.ParseProfile(JsonNode.Parse("""{"DisplayName":"FixturePlayer\uE000","XPInfo":[]}""")!).Name == "FixturePlayer", "Profile refresh reintroduced the platform glyph");
+            var logPath = Path.Combine(directory, "EE.log");
+            File.WriteAllText(logPath, "Sys [Info]: Logged in FixturePlayer\n");
+            var settings = Settings.Defaults(); settings["ee_log_path"] = logPath; settings["ocr_enabled"] = false; store.Write("settings", settings);
+            var snapshots = new SnapshotStore(Path.Combine(directory, "companion.sqlite"));
+            snapshots.Commit(InventoryParser.Parse(Encoding.UTF8.GetBytes("""{"MiscItems":[{"ItemType":"/Fixture","ItemCount":7}],"LastInventorySync":123}"""), id, true));
+            var runtime = new CompanionRuntime(directory, true);
+            try
+            {
+                runtime.Start();
+                var repaired = store.Read<RegistryState>("registry")!;
+                Check(repaired.Active == "linked" && repaired.Accounts.Count == 3, "Empty duplicate did not reconnect to the linked profile");
+                Check(repaired.Accounts.Single(a => a.Key == "linked").Name == "FixturePlayer", "Platform glyph remains");
+                Check(repaired.Accounts.Single(a => a.Key == "edited").Manual.Pinned.Single() == "/Keep", "User edits were lost");
+                Check(snapshots.Current(id)?.Counts.GetValueOrDefault("/Fixture") == 7, "Confirmed inventory changed");
+                Check(store.Read<RegistryState>("registry-before-name-repair")?.Accounts.Count == 4, "Original registry was not preserved");
+            }
+            finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
         test("Historical login preserves selected account and inferred identity retains inventory", () => InDirectory(directory =>
         {
             var logPath = Path.Combine(directory, "EE.log");

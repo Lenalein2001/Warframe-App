@@ -40,7 +40,7 @@ Download packages from [GitHub Releases](https://github.com/Lenalein2001/Warfram
 ### Windows
 
 - **Installer:** run `WarframeCompanion-win-x64-Setup.exe` for a per-user installation and Start menu shortcut.
-- **Portable:** extract the self-contained ZIP and run `Portable.cmd` to store data beside the app. Run `WarframeCompanion.Desktop.exe` instead to use your normal user profile.
+- **Portable:** extract the self-contained ZIP and run `Start Warframe Companion.cmd`. Program files stay in `app/`; portable settings and inventory stay in `data/` beside the launcher.
 - **Smaller download:** the framework-dependent ZIP requires the .NET 10 and ASP.NET Core 10 runtimes. The self-contained edition includes them.
 
 Windows requires WebView2. Both editions include the English OCR fallback. The framework-dependent ZIP is approximately 13 MB; the self-contained ZIP is approximately 63 MB.
@@ -70,7 +70,7 @@ Settings and account data are stored outside the installation directory by defau
 | --- | --- |
 | Windows | `%LOCALAPPDATA%\WarframeCompanion` |
 | Linux | `$XDG_DATA_HOME/WarframeCompanion`, or `~/.local/share/WarframeCompanion` |
-| Portable | `data/` beside the executable |
+| Portable | `data/` beside the top-level launcher |
 
 Updates and uninstallers preserve user data. Back up the data folder before moving profiles between machines. Existing legacy data is copied on first normal startup without changing the original files.
 

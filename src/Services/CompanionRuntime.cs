@@ -58,6 +58,7 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
             var paths = LegacyMigration.DefaultPaths(); var migrated = LegacyMigration.Load(paths.Data, paths.Config, snapshots);
             if (migrated is { } data) { registry = data.Registry; settings = data.Settings; store.Write("registry", registry); store.Write("settings", settings); Event("Copied existing Rust accounts and settings. Original files were preserved.", "info"); }
         }
+        RepairAccountNames();
         History = new(store);
         if (migrateLegacy) History.ImportLegacy(Path.Combine(LegacyMigration.DefaultPaths().Data, "rewards.jsonl"));
         cache = new(Path.Combine(DataDirectory, "cache"), offline); loader = new(cache);

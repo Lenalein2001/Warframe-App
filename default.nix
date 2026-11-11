@@ -2,7 +2,7 @@
 let runtime = import ./nix/runtime.nix { inherit pkgs; };
 in pkgs.buildDotnetModule {
   pname = "warframe-companion";
-  version = "0.1.0";
+  version = "0.1.1";
   src = pkgs.lib.cleanSourceWith {
     src = ./.;
     filter = path: _type: !(builtins.elem (baseNameOf path) [ ".git" "artifacts" "bin" "obj" "build" "result" ]);

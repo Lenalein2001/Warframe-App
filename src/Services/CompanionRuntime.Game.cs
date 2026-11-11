@@ -20,6 +20,34 @@ public sealed partial class CompanionRuntime
     private string? playingKey;
     private (string? Path, DateTime Time, long Length) watchedInventory;
     private readonly List<JsonNode> duviri = [];
+    private void RepairAccountNames()
+    {
+        var original = JsonSerializer.Serialize(registry, J.Options);
+        foreach (var account in registry.Accounts)
+        {
+            account.Name = GameLog.PlayerName(account.Name);
+            if (account.Profile is { } profile) account.Profile = profile with { Name = GameLog.PlayerName(profile.Name) };
+        }
+        foreach (var duplicate in registry.Accounts.Where(a => a.Id == null && a.Profile == null &&
+            a.Manual.Counts.Count == 0 && a.Manual.Mastered.Count == 0 && a.Manual.Pinned.Count == 0 && a.Manual.Tasks.Count == 0 &&
+            snapshots.Current(a.Key) == null).ToArray())
+        {
+            var matches = registry.Accounts.Where(a => a.Id != null && !string.IsNullOrWhiteSpace(a.Name) &&
+                string.Equals(a.Name, duplicate.Name, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (matches.Length != 1) continue;
+            var linked = matches[0];
+            linked.Seen = Math.Max(linked.Seen ?? 0, duplicate.Seen ?? 0);
+            linked.Duviri ??= duplicate.Duviri;
+            linked.ExpectedMemorySections = linked.ExpectedMemorySections.Union(duplicate.ExpectedMemorySections).ToArray();
+            linked.Evidence = linked.Evidence.Concat(duplicate.Evidence).DistinctBy(e => e.Id).Take(12).ToList();
+            if (registry.Active == duplicate.Key) registry.Active = linked.Key;
+            registry.Accounts.Remove(duplicate);
+        }
+        if (JsonSerializer.Serialize(registry, J.Options) == original) return;
+        if (store.Read<JsonNode>("registry-before-name-repair") == null)
+            store.Write("registry-before-name-repair", JsonNode.Parse(original));
+        store.Write("registry", registry);
+    }
     public event Action? RewardScreenOpened;
     public event Action? RewardScreenClosed;
     private void LinkLogAccount(AccountState account, string id)
@@ -37,7 +65,7 @@ public sealed partial class CompanionRuntime
             if (signal.Kind == "login")
             {
                 var next = JsonSerializer.Deserialize<RegistryState>(JsonSerializer.Serialize(registry, J.Options), J.Options)!;
-                var account = next.Accounts.FirstOrDefault(a => signal.Id != null && a.Id == signal.Id) ?? next.Accounts.FirstOrDefault(a => string.Equals(a.Name, signal.Value, StringComparison.OrdinalIgnoreCase) && (signal.Id == null || a.Id == null || a.Id == signal.Id));
+                var account = next.Accounts.FirstOrDefault(a => signal.Id != null && a.Id == signal.Id) ?? next.Accounts.FirstOrDefault(a => string.Equals(GameLog.PlayerName(a.Name), GameLog.PlayerName(signal.Value), StringComparison.OrdinalIgnoreCase) && (signal.Id == null || a.Id == null || a.Id == signal.Id));
                 if (account == null) { account = new() { Key = "account-" + Guid.NewGuid().ToString("N"), Name = signal.Value, Id = signal.Id, Source = "EE.log" }; next.Accounts.Add(account); }
                 account.Seen = signal.Time ?? account.Seen; if (signal.Id != null) LinkLogAccount(account, signal.Id);
                 if (playingKey != account.Key) { Interlocked.Increment(ref rewardGeneration); lastSuccessfulScan = null; ScanError = null; }

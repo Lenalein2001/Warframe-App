@@ -71,7 +71,7 @@ public sealed class StateStore
         if (id != null) { if (!System.Text.RegularExpressions.Regex.IsMatch(id, "^[a-fA-F0-9]{24}$")) throw new InventoryException("Profile account ID is invalid."); id = id.ToLowerInvariant(); }
         payload.Remove("AccountId");
         var parsed = InventoryParser.Parse(JsonSerializer.SerializeToUtf8Bytes(payload), "profile");
-        return new(J.S(Find(root, "DisplayName")), id, J.Get(root, "PlayerLevel") == null && Find(root, "PlayerLevel") == null ? null : J.N(Find(root, "PlayerLevel")),
+        return new(GameLog.PlayerName(J.S(Find(root, "DisplayName"))), id, J.Get(root, "PlayerLevel") == null && Find(root, "PlayerLevel") == null ? null : J.N(Find(root, "PlayerLevel")),
             parsed.Xp, parsed.Progress, parsed.Standing, J.Now, "Imported profile file");
     }
 }
