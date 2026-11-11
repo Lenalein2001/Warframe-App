@@ -1,0 +1,10 @@
+Warframe Companion requires the x64 .NET 10 runtime and ASP.NET Core 10 runtime, plus Microsoft Edge WebView2.
+
+This installer does not bundle or silently download those runtimes. If a required .NET runtime is missing, launching the companion displays Microsoft's runtime-installation prompt with a download link.
+
+Install the latest serviced 10.0.x runtimes from:
+https://dotnet.microsoft.com/en-us/download/dotnet/10.0
+
+Choose the Windows x64 installers under .NET Runtime and ASP.NET Core Runtime. The SDK is not needed. .NET Framework 4.x, older .NET versions, and the Desktop Runtime alone do not supply the required ASP.NET Core framework.
+
+Settings and inventory remain in your existing profile when the companion is updated or uninstalled.

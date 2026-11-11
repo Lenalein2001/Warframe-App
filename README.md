@@ -43,11 +43,11 @@ Download packages from [GitHub Releases](https://github.com/Lenalein2001/Warfram
 
 - **Installer:** run `WarframeCompanion-win-x64-Setup.exe` for a per-user installation and Start menu shortcut.
 - **Portable:** extract `WarframeCompanion-win-x64-portable.zip` and run `Start Warframe Companion.exe`. Program files stay in `app/`. A fresh copy shares your installed profile; an existing `data/` profile stays portable. Use `--portable` to create separate portable storage.
-- **Smaller download:** `WarframeCompanion-win-x64-framework-dependent.zip` requires the .NET 10 and ASP.NET Core 10 runtimes. The self-contained edition includes them.
+- **Requirements:** install the latest x64 .NET 10 and ASP.NET Core 10 runtimes from [Microsoft](https://dotnet.microsoft.com/en-us/download/dotnet/10.0). The SDK is not needed. Windows displays a download prompt if a required runtime is missing.
 
 Opening the same profile again brings its running desktop window forward. Each profile runs in one companion process.
 
-Windows requires WebView2. Both editions include the English OCR fallback. The framework-dependent ZIP is approximately 13 MB; the self-contained ZIP is approximately 63 MB.
+Windows also requires WebView2. Standard packages do not bundle .NET runtimes. The portable ZIP is approximately 13 MB and the extracted app approximately 28 MB, including the English OCR fallback. Shared runtimes are installed once and serviced separately.
 
 ### Linux
 
@@ -60,7 +60,7 @@ sudo apt install ./WarframeCompanion-linux-x64.deb
 warframe-companion
 ```
 
-**Portable:** extract `WarframeCompanion-linux-x64-portable.tar.gz` into a writable folder and run `./Portable.sh`. A fresh copy shares your installed profile; existing portable databases in `data/` stay portable. Use `--portable` for separate storage or `--data-dir PATH` for a specific profile. The .NET runtime is included; GTK 3, WebKitGTK 4.1, GTK Layer Shell, libnotify, fontconfig, ICU, OpenSSL and English Tesseract must be supplied by your distribution. Screenshot tools depend on the session: scrot/maim for X11, Spectacle for KDE, GNOME Screenshot for GNOME, or grim for wlroots compositors.
+**Portable:** extract `WarframeCompanion-linux-x64-portable.tar.gz` into a writable folder and run `./Portable.sh`. A fresh copy shares your installed profile; existing portable databases in `data/` stay portable. Use `--portable` for separate storage or `--data-dir PATH` for a specific profile. Install ASP.NET Core Runtime 10 through your distribution (on Ubuntu 24.04: `sudo apt install aspnetcore-runtime-10.0`). The Debian package declares this dependency automatically. GTK 3, WebKitGTK 4.1, GTK Layer Shell, libnotify, fontconfig, ICU, OpenSSL and English Tesseract must be supplied by your distribution. Screenshot tools depend on the session: scrot/maim for X11, Spectacle for KDE, GNOME Screenshot for GNOME, or grim for wlroots compositors.
 
 **Nix:** use `nix-build` and launch `./result/bin/WarframeCompanion.Desktop`. See [development](docs/DEVELOPMENT.md) for details.
 

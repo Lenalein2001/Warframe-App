@@ -1,5 +1,5 @@
 #ifndef PayloadDirectory
-  #error PayloadDirectory must point to a tested self-contained publish directory.
+  #error PayloadDirectory must point to a tested runtime-dependent publish directory.
 #endif
 #ifndef OutputDirectory
   #error OutputDirectory must be supplied.
@@ -40,9 +40,13 @@ UninstallDisplayIcon={app}\WarframeCompanion.Desktop.exe
 CloseApplications=yes
 RestartApplications=no
 LicenseFile=..\..\LICENSE
+InfoBeforeFile=RuntimeRequirements.txt
 
 ; Retire obsolete program files before copying the new payload. Never target profile storage.
 [InstallDelete]
+#ifdef RuntimeCleanupInclude
+#include RuntimeCleanupInclude
+#endif
 Type: files; Name: "{app}\tools\tesseract\*.dll"
 Type: files; Name: "{app}\Portable.cmd"
 

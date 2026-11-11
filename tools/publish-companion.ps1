@@ -20,55 +20,54 @@ $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
 $outputRoot = Join-Path $repoRoot "artifacts/companion-$Runtime-$stamp"
 New-Item -ItemType Directory -Path $outputRoot | Out-Null
 $measurements = @()
-foreach ($selfContained in @($false, $true)) {
-    $edition = if ($selfContained) { 'self-contained' } else { 'framework-dependent' }
-    $destination = Join-Path $outputRoot $edition
-    $arguments = @('publish', $project, '-c', 'Release', '-r', $Runtime,
-        '--self-contained', $selfContained.ToString().ToLowerInvariant(), '-o', $destination,
-        '-p:DebugType=None', '-p:DebugSymbols=false', '-p:RestoreLockedMode=true')
-    & dotnet @arguments
-    if ($LASTEXITCODE -ne 0) { throw "Publishing $edition failed." }
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/USAGE.md') -Destination (Join-Path $destination 'README.md')
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination $destination
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'licenses') -Destination $destination -Recurse
-    if ($Runtime.StartsWith('win-')) {
-        New-Item -ItemType Directory -Path (Join-Path $destination 'tools') | Out-Null
-        Copy-Item -LiteralPath $TesseractRoot -Destination (Join-Path $destination 'tools/tesseract') -Recurse
-    }
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'web/fonts/OFL-Rajdhani.txt'), (Join-Path $repoRoot 'web/fonts/OFL-SourceSans3.txt') -Destination (Join-Path $destination 'licenses')
-    & python (Join-Path $PSScriptRoot 'release-manifest.py') $destination --runtime $Runtime --edition $edition
-    if ($LASTEXITCODE -ne 0) { throw 'Release manifest creation failed.' }
-    & python (Join-Path $PSScriptRoot 'release-manifest.py') $destination --verify
-    if ($LASTEXITCODE -ne 0) { throw 'Release manifest verification failed.' }
-    $portable = Join-Path $outputRoot "$edition-portable"
-    New-Item -ItemType Directory -Path $portable | Out-Null
-    Copy-Item -LiteralPath $destination -Destination (Join-Path $portable 'app') -Recurse
-    $innerLauncher = Join-Path $portable ('app/' + $(if ($Runtime.StartsWith('win-')) { 'Portable.cmd' } else { 'Portable.sh' }))
-    if (Test-Path -LiteralPath $innerLauncher) { Remove-Item -LiteralPath $innerLauncher }
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging/PORTABLE.md') -Destination (Join-Path $portable 'README.md')
-    if ($Runtime.StartsWith('win-')) {
-        Copy-Item -LiteralPath (Join-Path $repoRoot 'src/Native/build/Release/companion_launcher.exe') -Destination (Join-Path $portable 'Start Warframe Companion.exe')
-    } else {
-        Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging/linux/Portable.sh') -Destination $portable
-    }
-    $label = if ($selfContained) { 'portable' } else { 'framework-dependent' }
-    $extension = if ($Runtime.StartsWith('win-')) { 'zip' } else { 'tar.gz' }
-    $archive = Join-Path $outputRoot "WarframeCompanion-$Runtime-$label.$extension"
-    & python (Join-Path $PSScriptRoot 'archive-companion.py') $portable $archive
-    if ($LASTEXITCODE -ne 0) { throw 'Archive creation failed.' }
-    $files = @(Get-ChildItem -LiteralPath $destination -Recurse -File)
-    $measurements += [PSCustomObject]@{
-        edition = $edition
-        runtime = $Runtime
-        requiresAspNetCore10 = -not $selfContained
-        fileCount = $files.Count
-        installedBytes = ($files | Measure-Object -Property Length -Sum).Sum
-        archive = [IO.Path]::GetFileName($archive)
-        archiveBytes = (Get-Item -LiteralPath $archive).Length
-        sha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
-        scope = 'Desktop C# replacement candidate; see validation report for outstanding live-platform checks'
-    }
+$selfContained = $false
+$edition = 'framework-dependent'
+$destination = Join-Path $outputRoot $edition
+$arguments = @('publish', $project, '-c', 'Release', '-r', $Runtime,
+    '--self-contained', $selfContained.ToString().ToLowerInvariant(), '-o', $destination,
+    '-p:DebugType=None', '-p:DebugSymbols=false', '-p:RestoreLockedMode=true')
+& dotnet @arguments
+if ($LASTEXITCODE -ne 0) { throw "Publishing $edition failed." }
+Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/USAGE.md') -Destination (Join-Path $destination 'README.md')
+Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination $destination
+Copy-Item -LiteralPath (Join-Path $repoRoot 'licenses') -Destination $destination -Recurse
+if ($Runtime.StartsWith('win-')) {
+    New-Item -ItemType Directory -Path (Join-Path $destination 'tools') | Out-Null
+    Copy-Item -LiteralPath $TesseractRoot -Destination (Join-Path $destination 'tools/tesseract') -Recurse
 }
-$measurements | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $outputRoot 'measurements.json')
+Copy-Item -LiteralPath (Join-Path $repoRoot 'web/fonts/OFL-Rajdhani.txt'), (Join-Path $repoRoot 'web/fonts/OFL-SourceSans3.txt') -Destination (Join-Path $destination 'licenses')
+& python (Join-Path $PSScriptRoot 'release-manifest.py') $destination --runtime $Runtime --edition $edition
+if ($LASTEXITCODE -ne 0) { throw 'Release manifest creation failed.' }
+& python (Join-Path $PSScriptRoot 'release-manifest.py') $destination --verify
+if ($LASTEXITCODE -ne 0) { throw 'Release manifest verification failed.' }
+$portable = Join-Path $outputRoot "$edition-portable"
+New-Item -ItemType Directory -Path $portable | Out-Null
+Copy-Item -LiteralPath $destination -Destination (Join-Path $portable 'app') -Recurse
+$innerLauncher = Join-Path $portable ('app/' + $(if ($Runtime.StartsWith('win-')) { 'Portable.cmd' } else { 'Portable.sh' }))
+if (Test-Path -LiteralPath $innerLauncher) { Remove-Item -LiteralPath $innerLauncher }
+Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging/PORTABLE.md') -Destination (Join-Path $portable 'README.md')
+if ($Runtime.StartsWith('win-')) {
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'src/Native/build/Release/companion_launcher.exe') -Destination (Join-Path $portable 'Start Warframe Companion.exe')
+} else {
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging/linux/Portable.sh') -Destination $portable
+}
+$label = 'portable'
+$extension = if ($Runtime.StartsWith('win-')) { 'zip' } else { 'tar.gz' }
+$archive = Join-Path $outputRoot "WarframeCompanion-$Runtime-$label.$extension"
+& python (Join-Path $PSScriptRoot 'archive-companion.py') $portable $archive
+if ($LASTEXITCODE -ne 0) { throw 'Archive creation failed.' }
+$files = @(Get-ChildItem -LiteralPath $destination -Recurse -File)
+$measurements += [PSCustomObject]@{
+    edition = $edition
+    runtime = $Runtime
+    requiresAspNetCore10 = -not $selfContained
+    fileCount = $files.Count
+    installedBytes = ($files | Measure-Object -Property Length -Sum).Sum
+    archive = [IO.Path]::GetFileName($archive)
+    archiveBytes = (Get-Item -LiteralPath $archive).Length
+    sha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+    scope = 'Desktop C# replacement candidate; see validation report for outstanding live-platform checks'
+}
+ConvertTo-Json -InputObject @($measurements) | Set-Content -LiteralPath (Join-Path $outputRoot 'measurements.json')
 $measurements | Format-Table
 Write-Output $outputRoot

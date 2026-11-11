@@ -1,6 +1,6 @@
 # Warframe Companion
 
-Launch `WarframeCompanion.Desktop.exe` for normal per-user storage, or `Start Warframe Companion.exe` in an extracted Windows package. The launcher reuses existing `data/state.sqlite` portable storage when present; otherwise it shares the installed profile. Pass `--portable` to explicitly create separate portable storage. Windows requires WebView2. The framework-dependent edition also requires the .NET 10 and ASP.NET Core 10 runtimes; the self-contained edition includes them.
+Launch `WarframeCompanion.Desktop.exe` for normal per-user storage, or `Start Warframe Companion.exe` in an extracted Windows package. The launcher reuses existing `data/state.sqlite` portable storage when present; otherwise it shares the installed profile. Pass `--portable` to explicitly create separate portable storage. Windows requires WebView2. All standard releases require the x64 .NET 10 and ASP.NET Core 10 shared runtimes.
 
 ## Inventory and crafting uses
 
@@ -11,6 +11,10 @@ No known crafting uses means no consuming recipes were found in the loaded catal
 ## Recognition
 
 Public exports, profiles, logs, imports and optional read-only memory capture supply inventory and game data. Reward choices and on-screen riven cards use the bundled OCR fallback. Enable memory capture in Settings if wanted; it is disabled by default.
+
+## Required runtimes
+
+The portable and installer releases use shared x64 .NET 10 and ASP.NET Core 10 runtimes. They are not bundled with the app. Download the latest serviced 10.0.x Windows runtime installers from https://dotnet.microsoft.com/en-us/download/dotnet/10.0; no SDK is required. The Windows executable prompts for a missing runtime. Linux users should install the ASP.NET Core 10 package from their distribution, which also brings in the base .NET runtime.
 
 ## Notifications
 

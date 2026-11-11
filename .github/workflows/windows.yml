@@ -32,6 +32,8 @@ jobs:
           python tools/smoke-desktop-package.py (Get-ChildItem artifacts/companion-win-x64-* -Directory | Select-Object -Last 1).FullName
           if ($LASTEXITCODE -ne 0) { throw 'Package smoke tests failed.' }
           $package = Get-ChildItem artifacts/companion-win-x64-* -Directory | Select-Object -Last 1
+          python tests/runtime-requirement.test.py (Join-Path $package.FullName 'framework-dependent/WarframeCompanion.Desktop.exe')
+          if ($LASTEXITCODE -ne 0) { throw 'Missing runtime test failed.' }
           ./tools/build-installer.ps1 -PackageDirectory $package.FullName
           ./tools/build-installer.ps1 -PackageDirectory $package.FullName -IsolatedTest
           ./tools/smoke-installer.ps1 -Installer (Join-Path $package.FullName 'installer-test/WarframeCompanion-win-x64-TestSetup.exe')

@@ -29,10 +29,13 @@ try {
 } finally {
     if (!$process.HasExited) { Stop-Process -Id $process.Id -Force }
 }
+$retiredRuntime = Join-Path $destination 'System.Private.CoreLib.dll'
+[IO.File]::WriteAllText($retiredRuntime, 'old bundled runtime fixture')
 $retiredOcr = Join-Path $destination 'tools/tesseract/obsolete-test-library.dll'
 [IO.File]::WriteAllText($retiredOcr, 'old OCR dependency fixture')
 $settingsHash = (Get-FileHash -LiteralPath (Join-Path $data 'state.sqlite')).Hash
 Install-Candidate
+if (Test-Path -LiteralPath $retiredRuntime) { throw 'Upgrade retained the old bundled runtime.' }
 if (Test-Path -LiteralPath $retiredOcr) { throw 'Upgrade retained an obsolete OCR dependency.' }
 if ((Get-FileHash -LiteralPath (Join-Path $data 'state.sqlite')).Hash -ne $settingsHash) { throw 'Upgrade changed settings.' }
 $uninstall = Start-Process -FilePath (Join-Path $destination 'unins000.exe') -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -WindowStyle Hidden -Wait -PassThru

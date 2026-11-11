@@ -2,6 +2,8 @@
 
 Extract the entire archive before starting.
 
+.NET runtimes are not bundled. Install .NET 10 and ASP.NET Core 10 for your platform and architecture. On Windows, use the x64 runtime installers from https://dotnet.microsoft.com/en-us/download/dotnet/10.0 (the SDK is not needed). If a required runtime is missing, the Windows executable displays Microsoft's download prompt. On Linux, install your distribution's ASP.NET Core 10 package; on Ubuntu 24.04 this is `aspnetcore-runtime-10.0`.
+
 - **Windows:** double-click `Start Warframe Companion.exe`.
 - **Linux:** run `./Portable.sh`. Install the native GTK/WebKit and OCR dependencies listed in `app/README.md`.
 - **app/** contains the program, libraries and licenses. Keep these files together.

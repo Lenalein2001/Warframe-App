@@ -9,7 +9,7 @@ cp "$package/WarframeCompanion-linux-x64-portable.tar.gz" artifacts/linux-releas
 stage=$(mktemp -d)
 trap 'rm -rf -- "$stage"' EXIT
 mkdir -p "$stage/opt/warframe-companion" "$stage/usr/bin" "$stage/usr/share/applications" "$stage/DEBIAN"
-cp -a "$package/self-contained/." "$stage/opt/warframe-companion/"
+cp -a "$package/framework-dependent/." "$stage/opt/warframe-companion/"
 chmod 755 "$stage/opt/warframe-companion/WarframeCompanion.Desktop"
 printf '#!/bin/sh\nexec /opt/warframe-companion/WarframeCompanion.Desktop "$@"\n' > "$stage/usr/bin/warframe-companion"
 chmod 755 "$stage/usr/bin/warframe-companion"
@@ -22,7 +22,7 @@ Architecture: amd64
 Maintainer: Lenalein2001 <noreply@github.com>
 Section: games
 Priority: optional
-Depends: libgtk-3-0t64, libwebkit2gtk-4.1-0, libgtk-layer-shell0, libnotify4, libfontconfig1, libicu74, libssl3t64, libstdc++6, tesseract-ocr, tesseract-ocr-eng, scrot
+Depends: aspnetcore-runtime-10.0, libgtk-3-0t64, libwebkit2gtk-4.1-0, libgtk-layer-shell0, libnotify4, libfontconfig1, libicu74, libssl3t64, libstdc++6, tesseract-ocr, tesseract-ocr-eng, scrot
 Description: Warframe inventory, mastery, crafting and reward companion
  Native desktop host with C# services and C/C++ processing.
 EOF

@@ -22,9 +22,9 @@ def request(port, route, body=None):
     with local_http.open(req, timeout=5) as response:
         return json.load(response) if route.startswith('api/') else response.read()
 
-for edition in ('framework-dependent', 'self-contained'):
-    label = 'portable' if edition == 'self-contained' else edition
-    archive_path = packages / f'WarframeCompanion-win-x64-{label}.zip'
+for package in json.loads((packages / 'measurements.json').read_text(encoding='utf-8-sig')):
+    edition = package['edition']
+    archive_path = packages / package['archive']
     with zipfile.ZipFile(archive_path) as archive:
         names = [name.lower().replace('\\', '/') for name in archive.namelist()]
         assert not any(name.endswith(('.pdb', '.rs', '.sqlite', '.sqlite-wal', '.sqlite-shm'))
@@ -36,6 +36,10 @@ for edition in ('framework-dependent', 'self-contained'):
             archive.extractall(extracted)
         subprocess.run([sys.executable, str(pathlib.Path(__file__).with_name('release-manifest.py')), str(extracted / 'app'), '--verify'], check=True)
         assert {p.name for p in extracted.iterdir()} == {'app', 'README.md', 'Start Warframe Companion.exe'}
+        config = json.loads((extracted / 'app/WarframeCompanion.Desktop.runtimeconfig.json').read_text())
+        assert {f['name'] for f in config['runtimeOptions']['frameworks']} == {'Microsoft.NETCore.App', 'Microsoft.AspNetCore.App'}
+        assert not (extracted / 'app/coreclr.dll').exists(), 'Shared runtime was bundled'
+        assert not (extracted / 'app/System.Private.CoreLib.dll').exists(), 'Framework assembly was bundled'
         for restart in (False, True):
             with socket.socket() as listener:
                 listener.bind(('127.0.0.1', 0))
@@ -82,4 +86,4 @@ for edition in ('framework-dependent', 'self-contained'):
                     if process.poll() is None:
                         process.kill()
                         process.wait()
-print('Both packaged editions passed.')
+print('Runtime-dependent package passed.')
