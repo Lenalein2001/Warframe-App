@@ -1,5 +1,6 @@
 """Run inside dbus-run-session and Xvfb with a real notification daemon."""
 import json
+import http.client
 import pathlib
 import socket
 import subprocess
@@ -10,6 +11,7 @@ import urllib.request
 import urllib.error
 
 executable = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else 'src/Desktop/bin/Release/net10.0/WarframeCompanion.Desktop').resolve()
+local_http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 with tempfile.TemporaryDirectory(prefix='wfc-linux-') as temporary:
     root = pathlib.Path(temporary)
     with socket.socket() as listener:
@@ -19,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix='wfc-linux-') as temporary:
         payload = None if body is None else json.dumps(body).encode()
         req = urllib.request.Request(f'http://127.0.0.1:{port}/api/{route}', data=payload,
                                      headers={'Content-Type': 'application/json'})
-        with urllib.request.urlopen(req, timeout=10) as response:
+        with local_http.open(req, timeout=10) as response:
             return json.load(response)
     def wait_for(check, description, seconds=60):
         until = time.monotonic() + seconds
@@ -28,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix='wfc-linux-') as temporary:
                 raise RuntimeError(f'Application exited: {app.returncode}; {log.read_text()}')
             try:
                 if check(): return
-            except (urllib.error.URLError, TimeoutError): pass
+            except (urllib.error.URLError, TimeoutError, http.client.HTTPException, ConnectionError): pass
             time.sleep(.25)
         raise RuntimeError(f'Timed out: {description}; {log.read_text()}')
     log = root / 'desktop.log'
@@ -50,6 +52,10 @@ with tempfile.TemporaryDirectory(prefix='wfc-linux-') as temporary:
             request('quit', {})
             assert app.wait(timeout=20) == 0
             print('GTK window, native notifications, X11 screenshot/overlay and clean shutdown passed.')
+        except Exception:
+            print(log.read_text())
+            print((root / 'notifications.log').read_text())
+            raise
         finally:
             for process in (app, daemon):
                 if process.poll() is None: process.terminate()
