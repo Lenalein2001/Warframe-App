@@ -35,6 +35,8 @@ Recipe information reflects the loaded catalog. Mastery is account-wide; individ
 
 ## Installation
 
+Packages include `build-manifest.json` with the source commit and SHA-256 hashes of their files. Release checksum lists cover the downloadable archives and installers; hashes help detect corruption but do not independently prove authenticity.
+
 Download packages from [GitHub Releases](https://github.com/Lenalein2001/Warframe-App/releases/latest). All published builds target **x86-64**.
 
 ### Windows

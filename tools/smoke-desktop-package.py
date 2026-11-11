@@ -32,6 +32,7 @@ for edition in ('framework-dependent', 'self-contained'):
         extracted = data / 'package'
         with zipfile.ZipFile(packages / (edition + '.zip')) as archive:
             archive.extractall(extracted)
+        subprocess.run([sys.executable, str(pathlib.Path(__file__).with_name('release-manifest.py')), str(extracted / 'app'), '--verify'], check=True)
         assert {p.name for p in extracted.iterdir()} == {'app', 'README.md', 'Start Warframe Companion.exe'}
         for restart in (False, True):
             with socket.socket() as listener:

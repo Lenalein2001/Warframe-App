@@ -39,3 +39,4 @@ jobs:
             artifacts/companion-win-x64-*/*.zip
             artifacts/companion-win-x64-*/measurements.json
             artifacts/companion-win-x64-*/*Setup.exe
+            artifacts/companion-win-x64-*/SHA256SUMS-windows.txt

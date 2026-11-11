@@ -38,6 +38,10 @@ foreach ($selfContained in @($false, $true)) {
         Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging/linux/Portable.sh') -Destination $destination
     }
     Copy-Item -LiteralPath (Join-Path $repoRoot 'web/fonts/OFL-Rajdhani.txt'), (Join-Path $repoRoot 'web/fonts/OFL-SourceSans3.txt') -Destination (Join-Path $destination 'licenses')
+    & python (Join-Path $PSScriptRoot 'release-manifest.py') $destination --runtime $Runtime --edition $edition
+    if ($LASTEXITCODE -ne 0) { throw 'Release manifest creation failed.' }
+    & python (Join-Path $PSScriptRoot 'release-manifest.py') $destination --verify
+    if ($LASTEXITCODE -ne 0) { throw 'Release manifest verification failed.' }
     $portable = Join-Path $outputRoot "$edition-portable"
     New-Item -ItemType Directory -Path $portable | Out-Null
     Copy-Item -LiteralPath $destination -Destination (Join-Path $portable 'app') -Recurse
