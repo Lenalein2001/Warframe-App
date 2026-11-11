@@ -54,7 +54,7 @@ Current builds are in the **WarframeCompanion-win-x64** artifact of a successful
 
 All editions require WebView2 and include the OCR fallback. Run the executable for normal storage or `Portable.cmd` for data beside the app. See [usage](docs/USAGE.md).
 
-Removing unused legacy OCR data reduces the framework-dependent ZIP to approximately **24 MiB**, and the self-contained ZIP to **71 MiB**, while retaining the original LSTM model and dictionaries. The launcher is about 159 KiB; most package space is runtime libraries and OCR dependencies. Exact measurements and test conditions are in [validation](docs/migration/VALIDATION.md).
+A minimal native OCR build reduces the framework-dependent ZIP to approximately **12 MiB**, and the self-contained ZIP to **60 MiB**, while retaining the original LSTM model and dictionaries. The launcher is about 159 KiB; most package space is runtime libraries and OCR data. Exact measurements and test conditions are in [validation](docs/migration/VALIDATION.md).
 
 ## Data flow
 

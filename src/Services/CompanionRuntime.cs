@@ -116,7 +116,7 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
             var account = Active; var inv = view.Inventory; var profile = account?.Profile;
             var mastered = Catalog.Items.Values.Count(i => view.Status(i).Status == "mastered");
             var sources = new {
-                eeLog = new { path = Log.Path, active = Log.Active, searching = Log.Path == null },
+                eeLog = new { path = Log.Path, active = GameProcess != null, searching = Log.Path == null },
                 profile = new { fetched = profile?.Fetched, source = profile?.Source, error = account?.ProfileError, items = profile?.Xp.Count ?? 0 },
                 inventory = new { source = inv?.Provider, imported = inv?.ReadAt.ToUnixTimeMilliseconds() / 1000.0, synced = inv?.SourceTimestamp, stacks = inv?.Counts.Count ?? 0 },
                 manual = new { counts = view.Manual.Counts.Count, mastered = view.Manual.Mastered.Count },
@@ -124,7 +124,7 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
                 tools = new Dictionary<string, object?> { ["tesseract"] = ScreenCapture.Which("tesseract") != null, ["screenshot"] = ScreenCapture.ScreenshotTool(J.S(settings, "screenshot_tool") ?? "auto"), ["notify-send"] = OperatingSystem.IsWindows() || ScreenCapture.Which("notify-send") != null }, market = new { error = Market.Error, queued = Market.Pending }
             };
             return J.Node(new { ready = Catalog.LoadedAt != null, dataError = DataError, version = UpdateService.Version, os = OperatingSystem.IsWindows() ? "windows" : "linux", desktop = Desktop, update = Updates.Available,
-                account = new { key = account?.Key, id = account?.Id, name = account?.Name, source = account?.Source, playing = GameProcess != null && account?.Key == playingKey, logName = Log.Player, evidence = account?.Evidence ?? [], profileError = account?.ProfileError },
+                account = new { key = account?.Key, id = account?.Id, name = account?.Name, source = account?.Source, playing = GameProcess != null && account?.Key == playingKey, logName = GameProcess != null ? Log.Player : null, evidence = account?.Evidence ?? [], profileError = account?.ProfileError },
                 accounts = registry.Accounts.Select(a => {
                     var saved = a.Key == registry.Active ? inv : snapshots.Current(a.Id ?? a.Key);
                     return new { key = a.Key, name = a.Name, id = a.Id, source = a.Source, active = a.Key == registry.Active, playing = GameProcess != null && a.Key == playingKey, masteryRank = a.Profile?.MasteryRank ?? saved?.MasteryRank ?? a.Badge, masteryRankMax = a.Profile?.MasteryRank == null && saved?.MasteryRank == null ? a.BadgeMax : null,
@@ -244,6 +244,10 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
             case "rewards/scan": return await ScanRewards(false, cancellation);
             case "riven/scan": return await ScanRiven(cancellation);
             case "overlay/test": await TestOverlay(cancellation); break;
+            case "notifications/test":
+                if (NotificationRequested is not { } notificationHandler) throw new InventoryException("Open the desktop app to test notifications.");
+                notificationHandler("Warframe Companion", "Notifications are ready. Foundry builds, watched fissures and reward reminders will appear here.");
+                break;
             case "hotkeys/register": return RegisterHotkeys?.Invoke() ?? throw new InventoryException("Open the desktop app to register hotkeys.");
             case "manual/count":
                 var uid = Uid(); var count = J.Get(body, "count"); if (count != null && J.N(count, -1) < 0) throw new InventoryException("Count must be a nonnegative integer.");

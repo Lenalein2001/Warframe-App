@@ -9,8 +9,14 @@ public sealed partial class CompanionRuntime
     public event Action<string, string>? NotificationRequested;
     private void Notify(string key, string title, string body)
     {
-        lock (notified) if (NotificationRequested == null || !notified.Add(key)) return;
-        NotificationRequested.Invoke(title, body);
+        var handler = NotificationRequested;
+        lock (notified) if (handler == null || !notified.Add(key)) return;
+        try { handler(title, body); }
+        catch (Exception e)
+        {
+            lock (notified) notified.Remove(key);
+            Event("Notification delivery failed: " + e.GetType().Name + ". It will be retried on the next refresh.", "error");
+        }
     }
     private void NotificationTick()
     {
@@ -28,8 +34,14 @@ public sealed partial class CompanionRuntime
         }
         if (J.B(config["notify_foundry"]))
         {
-            lock (sync) foreach (var account in registry.Accounts) foreach (var build in snapshots.Current(account.Id ?? account.Key)?.Foundry ?? [])
-                if (build.Done <= J.Now) Notify("build:" + account.Key + ":" + build.Recipe + ":" + build.Done?.ToString(CultureInfo.InvariantCulture), "Foundry", Catalog.NameOf(build.Recipe) + (registry.Accounts.Count > 1 ? " (" + account.Name + ")" : "") + " is ready to claim");
+            (string Key, string Body)[] ready;
+            lock (sync) ready = registry.Accounts.SelectMany(account => (snapshots.Current(account.Id ?? account.Key)?.Foundry ?? [])
+                .Where(build => build.Done <= J.Now).Select(build => (
+                    "build:" + account.Key + ":" + build.Recipe + ":" + build.Done?.ToString(CultureInfo.InvariantCulture),
+                    Catalog.NameOf(build.Recipe) + (registry.Accounts.Count > 1 ? " (" + account.Name + ")" : "") + " is ready to claim"))).ToArray();
+            // Desktop callbacks may synchronously marshal to the UI thread. Never
+            // hold the account lock while waiting for them.
+            foreach (var notification in ready) Notify(notification.Key, "Foundry", notification.Body);
         }
     }
 }

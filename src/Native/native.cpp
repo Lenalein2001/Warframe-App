@@ -10,6 +10,19 @@
 #include "vendor/lzma/LzmaDec.h"
 
 int wfc_abi_version() noexcept { return 1; }
+int wfc_bgra_to_rgb(const std::uint8_t* pixels, int width, int height, int stride, std::uint8_t* output, std::size_t capacity) noexcept {
+    if (!pixels || !output || width <= 0 || height <= 0 || width > 32768 || height > 32768 || stride < width * 4) return 0;
+    const auto count = static_cast<std::size_t>(width) * height;
+    if (count > 40000000 || capacity < count * 3) return 0;
+    for (int y = 0; y < height; ++y) {
+        const auto row = pixels + static_cast<std::size_t>(y) * stride;
+        auto dest = output + static_cast<std::size_t>(y) * width * 3;
+        for (int x = 0; x < width; ++x) {
+            dest[x * 3] = row[x * 4 + 2]; dest[x * 3 + 1] = row[x * 4 + 1]; dest[x * 3 + 2] = row[x * 4];
+        }
+    }
+    return 1;
+}
 std::int64_t wfc_unlzma(const std::uint8_t* data, std::size_t size, std::uint8_t* output, std::size_t capacity) noexcept {
     if (!data || !output || size < 13 || capacity == 0 || capacity > 32 * 1024 * 1024 || size > 32 * 1024 * 1024) return -1;
     std::uint64_t declared = 0; for (int i=0; i<8; ++i) declared |= std::uint64_t(data[5+i]) << (i*8);

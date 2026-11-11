@@ -24,7 +24,16 @@ public static class ScreenCapture
         { var path = Path.Combine(dir, executable); if (File.Exists(path)) return path; }
         return null;
     }
-    public static string? ScreenshotTool(string setting) => OperatingSystem.IsWindows() ? "Windows GDI" : (setting == "auto" ? new[] { "grim", "spectacle", "gnome-screenshot", "maim", "scrot", "import" } : [setting]).FirstOrDefault(t => Which(t) != null);
+    public static string[] ScreenshotCandidates(string setting, bool wayland, string desktop, bool wlroots) => setting != "auto" ? [setting]
+        : !wayland ? ["maim", "scrot", "gnome-screenshot", "spectacle", "import"]
+        : wlroots ? ["grim"]
+        : desktop.Contains("KDE", StringComparison.OrdinalIgnoreCase) ? ["spectacle"]
+        : desktop.Contains("GNOME", StringComparison.OrdinalIgnoreCase) ? ["gnome-screenshot"]
+        : ["grim", "spectacle", "gnome-screenshot"];
+    public static string? ScreenshotTool(string setting) => OperatingSystem.IsWindows() ? "Windows GDI" : ScreenshotCandidates(setting,
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY")), Environment.GetEnvironmentVariable("XDG_CURRENT_DESKTOP") ?? "",
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("HYPRLAND_INSTANCE_SIGNATURE")) || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SWAYSOCK")))
+        .FirstOrDefault(t => Which(t) != null);
     public static async Task<string> Run(string executable, IEnumerable<string> arguments, CancellationToken cancellation, int seconds = 20)
     {
         var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
@@ -55,9 +64,15 @@ public static class ScreenCapture
         rectangle.Intersect(new SKRectI(0, 0, bitmap.Width, bitmap.Height)); if (rectangle.Width < 2 || rectangle.Height < 2) throw new InventoryException("OCR crop lies outside the screenshot.");
         using var crop = new SKBitmap(); if (!bitmap.ExtractSubset(crop, rectangle)) throw new InventoryException("OCR crop failed.");
         using var prepared = crop.Copy(SKColorType.Bgra8888); NativeEngine.Prepare(prepared, variant);
-        using var scaled = prepared.Resize(new SKImageInfo(crop.Width * 2, crop.Height * 2), new SKSamplingOptions(SKCubicResampler.CatmullRom));
-        var path = Path.Combine(Path.GetTempPath(), "warframe-ocr-" + Guid.NewGuid().ToString("N") + ".png");
-        try { using (var image = SKImage.FromBitmap(scaled)) using (var data = image.Encode(SKEncodedImageFormat.Png, 100)) await File.WriteAllBytesAsync(path, data.ToArray(), cancellation);
+        using var scaled = prepared.Resize(new SKImageInfo(crop.Width * 2, crop.Height * 2, SKColorType.Bgra8888), new SKSamplingOptions(SKCubicResampler.CatmullRom));
+        var path = Path.Combine(Path.GetTempPath(), "warframe-ocr-" + Guid.NewGuid().ToString("N") + ".ppm");
+        try {
+            // PPM preserves the exact RGB pixels without encoding and decoding PNG.
+            await using (var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, true))
+            {
+                await file.WriteAsync(System.Text.Encoding.ASCII.GetBytes(FormattableString.Invariant($"P6\n{scaled.Width} {scaled.Height}\n255\n")), cancellation);
+                await file.WriteAsync(NativeEngine.Rgb(scaled), cancellation);
+            }
             return await Run(tesseract, [path, "stdout", "-l", "eng", "--oem", "1", "--psm", mode.ToString(System.Globalization.CultureInfo.InvariantCulture)], cancellation); }
         finally { if (File.Exists(path)) File.Delete(path); }
     }

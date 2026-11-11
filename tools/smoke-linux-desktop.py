@@ -1,0 +1,57 @@
+"""Run inside dbus-run-session and Xvfb with a real notification daemon."""
+import json
+import pathlib
+import socket
+import subprocess
+import tempfile
+import time
+import urllib.request
+import urllib.error
+
+executable = pathlib.Path('src/Desktop/bin/Release/net10.0/WarframeCompanion.Desktop').resolve()
+with tempfile.TemporaryDirectory(prefix='wfc-linux-') as temporary:
+    root = pathlib.Path(temporary)
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1', 0))
+        port = listener.getsockname()[1]
+    def request(route, body=None):
+        payload = None if body is None else json.dumps(body).encode()
+        req = urllib.request.Request(f'http://127.0.0.1:{port}/api/{route}', data=payload,
+                                     headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return json.load(response)
+    def wait_for(check, description, seconds=60):
+        until = time.monotonic() + seconds
+        while time.monotonic() < until:
+            if app.poll() is not None:
+                raise RuntimeError(f'Application exited: {app.returncode}; {log.read_text()}')
+            try:
+                if check(): return
+            except (urllib.error.URLError, TimeoutError): pass
+            time.sleep(.25)
+        raise RuntimeError(f'Timed out: {description}; {log.read_text()}')
+    log = root / 'desktop.log'
+    with log.open('w') as output, (root / 'notifications.log').open('w') as notifications:
+        daemon = subprocess.Popen(['dunst'], stdout=notifications, stderr=notifications)
+        app = subprocess.Popen([str(executable), '--offline', '--no-game', '--data-dir', str(root / 'data'), '--port', str(port)], stdout=output, stderr=output)
+        try:
+            wait_for(lambda: request('state').get('desktop'), 'GTK desktop startup')
+            windows = subprocess.check_output(['xwininfo', '-root', '-tree'], text=True)
+            assert 'Warframe App' in windows, windows
+            request('settings', {'screenshot_tool': 'scrot', 'overlay_backend': 'x11'})
+            request('notifications/test', {})
+            # Move the visible notification into history, then inspect the daemon's payload.
+            subprocess.run(['dunstctl', 'close-all'], check=True)
+            history = subprocess.check_output(['dunstctl', 'history'], text=True)
+            assert 'Warframe Companion' in history and 'Notifications are ready' in history, history
+            request('overlay/test', {})
+            wait_for(lambda: 'Warframe Companion Overlay' in subprocess.check_output(['xwininfo', '-root', '-tree'], text=True), 'native X11 overlay')
+            assert not any('Overlay failed' in event.get('text', '') or 'could not be created' in event.get('text', '') for event in request('state')['events'])
+            request('quit', {})
+            assert app.wait(timeout=20) == 0
+            print('GTK window, native notifications, X11 screenshot/overlay and clean shutdown passed.')
+        finally:
+            for process in (app, daemon):
+                if process.poll() is None: process.terminate()
+                try: process.wait(timeout=10)
+                except subprocess.TimeoutExpired: process.kill(); process.wait()

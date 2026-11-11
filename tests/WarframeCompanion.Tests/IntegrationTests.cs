@@ -12,6 +12,56 @@ public static class IntegrationTests
     private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
     public static void Register(Action<string, Action> test)
     {
+        test("Automatic screenshots select tools for the active Linux desktop", () =>
+        {
+            Check(!ScreenCapture.ScreenshotCandidates("auto", false, "", false).Contains("grim"), "X11 selected a Wayland-only capture tool");
+            Check(ScreenCapture.ScreenshotCandidates("auto", true, "KDE", false).SequenceEqual(["spectacle"]), "KDE selected a wlroots-only tool");
+            Check(ScreenCapture.ScreenshotCandidates("auto", true, "GNOME", false).SequenceEqual(["gnome-screenshot"]), "GNOME selected a wlroots-only tool");
+            Check(ScreenCapture.ScreenshotCandidates("auto", true, "", true).SequenceEqual(["grim"]), "wlroots capture changed");
+            Check(ScreenCapture.ScreenshotCandidates("scrot", true, "KDE", false).SequenceEqual(["scrot"]), "Explicit user choice was overwritten");
+        });
+        test("Proton log discovery follows Steam libraries and chooses the active prefix", () => InDirectory(directory =>
+        {
+            var home = Path.Combine(directory, "home");
+            var steam = Path.Combine(home, ".local", "share", "Steam", "steamapps"); Directory.CreateDirectory(steam);
+            var library = Path.Combine(directory, "Games on another disk");
+            File.WriteAllText(Path.Combine(steam, "libraryfolders.vdf"), "\"libraryfolders\" { \"1\" { \"path\" \"" + library.Replace("\\", "\\\\") + "\" } }");
+            string WriteLog(string prefix)
+            {
+                var log = Path.Combine(prefix, "pfx", "drive_c", "users", "steamuser", "AppData", "Local", "Warframe", "EE.log");
+                Directory.CreateDirectory(Path.GetDirectoryName(log)!); File.WriteAllText(log, "fixture"); return log;
+            }
+            var moved = WriteLog(Path.Combine(library, "steamapps", "compatdata", "230410"));
+            Check(ProtonPaths.FindLog(home) == moved, "Secondary Steam library was missed");
+            File.SetLastWriteTimeUtc(moved, DateTime.UtcNow.AddHours(-2));
+            var custom = Path.Combine(directory, "custom-prefix"); var current = WriteLog(custom);
+            Check(ProtonPaths.FindLog(home, custom) == current, "Explicit active Proton prefix was missed");
+            File.WriteAllText(Path.Combine(steam, "libraryfolders.vdf"), "truncated manifest");
+            Check(ProtonPaths.FindLog(home, custom) == current, "Broken library manifest hid the explicit prefix");
+        }));
+        test("Foundry notification callbacks release account locks and failures do not stop refresh", () => InDirectory(directory =>
+        {
+            var store = new StateStore(Path.Combine(directory, "state.sqlite"));
+            store.Write("registry", new RegistryState { Active = "fixture", Accounts = [new() { Key = "fixture", Name = "Fixture" }] });
+            var settings = Settings.Defaults(); settings["notify_foundry"] = true; store.Write("settings", settings);
+            new SnapshotStore(Path.Combine(directory, "companion.sqlite")).Commit(InventoryParser.Parse(
+                Encoding.UTF8.GetBytes("""{"MiscItems":[],"PendingRecipes":[{"ItemType":"/Recipe","CompletionDate":{"$date":{"$numberLong":"1000"}}}],"LastInventorySync":123}"""), "fixture", true));
+            var runtime = new CompanionRuntime(directory, true);
+            var lockReleased = false;
+            runtime.NotificationRequested += (_, _) =>
+            {
+                lockReleased = Task.Run(runtime.GetSettings).Wait(TimeSpan.FromSeconds(2));
+                throw new InvalidOperationException("Simulated desktop notification failure");
+            };
+            try
+            {
+                runtime.Start(watchGame: false);
+                Check(SpinWait.SpinUntil(() => J.A(runtime.Get("state", new Dictionary<string, string>()), "events")
+                    .Any(e => J.S(e, "text")?.StartsWith("Notification delivery failed:", StringComparison.Ordinal) == true), TimeSpan.FromSeconds(10)), "Notification failure was not reported");
+                Check(lockReleased, "Desktop callback ran while the account lock was held");
+            }
+            finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
         test("Platform changes reuse bounded market clients while existing views remain valid", () => InDirectory(directory =>
         {
             var runtime = new CompanionRuntime(directory, true);

@@ -43,10 +43,8 @@ internal static class Program
                 server.Runtime.OverlayRequested += overlay.Show; server.Runtime.OverlayHidden += overlay.Hide;
                 server.Runtime.OverlayUpdated += overlay.Update;
                 server.Runtime.RegisterHotkeys = hotkeys.Register; server.Runtime.HotkeyStatus = hotkeys.Status;
-                server.Runtime.NotificationRequested += (title, body) => {
-                    if (OperatingSystem.IsWindows()) window.Invoke(() => { try { window.SendNotification(title, body); } catch (Exception e) { server.Runtime.Event("Notification failed: " + e.GetType().Name, "error"); } });
-                    else _ = NotifyLinux(title, body, server.Runtime);
-                };
+                using var notifications = new NativeNotifications();
+                server.Runtime.NotificationRequested += notifications.Show;
                 if (OperatingSystem.IsWindows()) { try { hotkeys.Register(); } catch (Exception e) { server.Runtime.Event(e.Message, "error"); } }
                 server.Runtime.Desktop = true;
                 server.Runtime.ShowRequested += () => window.Invoke(() => { window.SetMinimized(false); window.SetTopMost(true); window.SetTopMost(false); });
@@ -62,10 +60,5 @@ internal static class Program
             Console.Error.WriteLine("Could not start Warframe Companion: " + e.GetType().Name + ". Check the runtime, port and data directory.");
             return 1;
         }
-    }
-    private static async Task NotifyLinux(string title, string body, WarframeCompanion.Services.CompanionRuntime runtime)
-    {
-        try { if (WarframeCompanion.Services.ScreenCapture.Which("notify-send") is { } program) await WarframeCompanion.Services.ScreenCapture.Run(program, ["-a", "Warframe Companion", "-t", "15000", "--", title, body], CancellationToken.None); }
-        catch (Exception e) { runtime.Event("Notification failed: " + e.GetType().Name, "error"); }
     }
 }

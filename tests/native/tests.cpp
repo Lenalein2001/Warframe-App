@@ -48,6 +48,14 @@ static void memory_test() {
     check(wfc_scan_memory(-1, candidate, progress, &found) == -2);
 }
 int main() {
+    const std::uint8_t color_rows[] = {1,2,3,255,4,5,6,255,99,99,99,99,7,8,9,255,10,11,12,255,99,99,99,99};
+    std::uint8_t rgb[12]{};
+    check(wfc_bgra_to_rgb(color_rows, 2, 2, 12, rgb, sizeof(rgb)) == 1);
+    const std::uint8_t expected_rgb[] = {3,2,1,6,5,4,9,8,7,12,11,10};
+    check(std::memcmp(rgb, expected_rgb, sizeof(rgb)) == 0);
+    check(wfc_bgra_to_rgb(color_rows, 2, 2, 12, rgb, 11) == 0);
+    check(wfc_bgra_to_rgb(color_rows, 2, 2, 7, rgb, sizeof(rgb)) == 0);
+    check(wfc_bgra_to_rgb(nullptr, 2, 2, 12, rgb, sizeof(rgb)) == 0);
     memory_test();
     check(wfc_abi_version() == 1);
     const std::uint8_t data[]{1,2,1,2,3}; const std::uint8_t needle[]{1,2,3};

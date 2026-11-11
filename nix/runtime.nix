@@ -9,6 +9,7 @@ rec {
     glib-networking   # TLS for the item art the UI loads from warframe.market and warframestat
     gtk-layer-shell   # the reward/riven overlays on Wayland compositors (Hyprland, Sway, KDE)
     fontconfig        # registers the bundled fonts for the overlays
+    libnotify         # direct native desktop notifications
   ];
 
   # Programs the app runs. Compositor tools (hyprctl, swaymsg) are deliberately not here: they
@@ -16,7 +17,6 @@ rec {
   tools = with pkgs; [
     (tesseract.override { enableLanguages = [ "eng" ]; })
     grim       # screenshots on wlroots-style compositors (Hyprland, Sway)
-    libnotify  # notify-send, for the optional desktop notification
   ];
 
   # Shell form of what wrapGAppsHook3 sets up for the packaged build: TLS for WebKit, and the

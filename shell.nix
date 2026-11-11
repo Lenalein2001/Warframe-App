@@ -1,5 +1,5 @@
 # Development shell: the C# and C++ toolchains, the GTK/WebKit libraries the app links against, and the
-# tools it runs (tesseract, grim, notify-send). `./run.sh` uses it automatically on NixOS.
+# tools it runs (tesseract, grim). `./run.sh` uses it automatically on NixOS.
 { pkgs ? import <nixpkgs> { } }:
 let
   runtime = import ./nix/runtime.nix { inherit pkgs; };

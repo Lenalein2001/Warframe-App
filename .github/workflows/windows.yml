@@ -15,18 +15,12 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: UCRT64
-          update: false
-          install: mingw-w64-ucrt-x86_64-tesseract-ocr zip
-      - name: Bundle OCR fallback
-        shell: msys2 {0}
-        run: bash .github/bundle-tesseract.sh "$(cygpath -u "$GITHUB_WORKSPACE")/tesseract.zip"
+      - name: Build minimal OCR fallback
+        shell: pwsh
+        run: ./tools/build-ocr.ps1 -OutputDirectory artifacts/ocr
       - name: Build and test packages
         shell: pwsh
         run: |
-          Expand-Archive tesseract.zip -DestinationPath artifacts/ocr
           ./tools/publish-companion.ps1 -TesseractRoot "$PWD/artifacts/ocr"
           $env:PATH = "$PWD/artifacts/ocr;$env:PATH"
           $env:TESSDATA_PREFIX = "$PWD/artifacts/ocr/tessdata"

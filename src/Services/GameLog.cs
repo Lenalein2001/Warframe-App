@@ -53,12 +53,7 @@ public sealed class GameLog
     public static string? Discover()
     {
         if (OperatingSystem.IsWindows()) { var p = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Warframe", "EE.log"); return File.Exists(p) ? p : null; }
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        foreach (var basePath in new[] { ".steam/steam", ".local/share/Steam", ".var/app/com.valvesoftware.Steam/.local/share/Steam" })
-        {
-            var p = System.IO.Path.Combine(home, basePath, "steamapps/compatdata/230410/pfx/drive_c/users/steamuser/AppData/Local/Warframe/EE.log"); if (File.Exists(p)) return p;
-        }
-        return null;
+        return ProtonPaths.FindLog(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Environment.GetEnvironmentVariable("STEAM_COMPAT_DATA_PATH"));
     }
     public void Poll(string? configured)
     {

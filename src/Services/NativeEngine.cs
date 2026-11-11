@@ -36,6 +36,17 @@ public static class NativeEngine
         if (bitmap.ColorType != SKColorType.Bgra8888) throw new ArgumentException("OCR requires BGRA pixels.");
         if (PrepareNative(bitmap.GetPixels(), bitmap.Width, bitmap.Height, bitmap.RowBytes, variant) != 1) throw new IOException("Invalid OCR pixel buffer.");
     }
+    public static byte[] Rgb(SKBitmap bitmap)
+    {
+        if (bitmap.ColorType != SKColorType.Bgra8888 || (long)bitmap.Width * bitmap.Height > 40_000_000)
+            throw new ArgumentException("OCR requires a bounded BGRA image.");
+        var output = new byte[checked(bitmap.Width * bitmap.Height * 3)];
+        if (RgbNative(bitmap.GetPixels(), bitmap.Width, bitmap.Height, bitmap.RowBytes, output, (nuint)output.Length) != 1)
+            throw new IOException("Invalid OCR pixel buffer.");
+        return output;
+    }
+    [DllImport("warframe_native", EntryPoint = "wfc_bgra_to_rgb", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int RgbNative(nint pixels, int width, int height, int stride, [Out] byte[] output, nuint capacity);
     public static RewardLayout? Layout(SKBitmap bitmap, double? scale)
     {
         using var converted = bitmap.ColorType == SKColorType.Bgra8888 ? null : bitmap.Copy(SKColorType.Bgra8888);
