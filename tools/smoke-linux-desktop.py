@@ -3,12 +3,13 @@ import json
 import pathlib
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.request
 import urllib.error
 
-executable = pathlib.Path('src/Desktop/bin/Release/net10.0/WarframeCompanion.Desktop').resolve()
+executable = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else 'src/Desktop/bin/Release/net10.0/WarframeCompanion.Desktop').resolve()
 with tempfile.TemporaryDirectory(prefix='wfc-linux-') as temporary:
     root = pathlib.Path(temporary)
     with socket.socket() as listener:

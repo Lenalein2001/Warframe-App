@@ -29,6 +29,17 @@ dotnet run --project src/Desktop -c Release
 
 Linux additionally requires GTK3, WebKitGTK 4.1, gtk-layer-shell, Tesseract English data, a supported screenshot utility, and libnotify for notifications. Build the native libraries with CMake before building .NET. Linux runtime and compositor verification remain separate release gates.
 
+On Nix, `nix-build` creates the packaged application; launch `./result/bin/WarframeCompanion.Desktop`. The development launcher `./run.sh` enters the Nix shell when needed. On other Linux distributions, install the dependencies above, then run:
+
+```sh
+cmake -S src/Native -B src/Native/build -DCMAKE_BUILD_TYPE=Release
+cmake --build src/Native/build --parallel
+ctest --test-dir src/Native/build --output-on-failure
+dotnet run --project src/Desktop -c Release
+```
+
+The native Linux app runs alongside the game in Proton. Steam library discovery and screenshot selection have regression coverage. `tools/smoke-linux-desktop.py` runs under `dbus-run-session` and Xvfb with dunst to exercise a GTK window, native notification delivery and an X11 screenshot/overlay. It does not substitute for a real Proton game session or Wayland compositor checks.
+
 ## Storage and migration
 
 Normal desktop startup uses `WarframeCompanion` in the OS local application-data directory. On first startup it copies existing Rust accounts, inventory, profile, manual counts, mastery, pins, farming tasks, settings and reward history. It never changes the Rust files. Account-specific data and settings use `state.sqlite`; normalized inventory observations and confirmed pointers use `companion.sqlite`.

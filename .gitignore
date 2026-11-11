@@ -32,3 +32,5 @@ codex-clipboard-*
 *.sqlite-wal
 *.sqlite-shm
 src/Native/build/
+__pycache__/
+*.py[cod]

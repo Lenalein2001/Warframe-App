@@ -57,4 +57,14 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           nix_path: nixpkgs=channel:nixos-unstable
-      - run: nix-build --no-out-link
+      - run: nix-build -o artifacts/linux-package
+      - name: Exercise packaged Linux desktop
+        run: |
+          nix-shell -p xorg.xorgserver xorg.xwininfo xorg.xdpyinfo dbus dunst scrot python3 --run '
+            export DISPLAY=:99
+            Xvfb :99 -screen 0 1920x1080x24 &
+            display_pid=$!
+            trap "kill $display_pid" EXIT
+            for attempt in $(seq 1 50); do xdpyinfo >/dev/null 2>&1 && break; sleep .1; done
+            dbus-run-session -- python tools/smoke-linux-desktop.py artifacts/linux-package/bin/WarframeCompanion.Desktop
+          '

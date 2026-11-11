@@ -20,7 +20,9 @@ public static class ScreenCapture
     public static string? Which(string name)
     {
         var executable = OperatingSystem.IsWindows() ? name + ".exe" : name;
-        foreach (var dir in new[] { Path.Combine(AppContext.BaseDirectory, "tools", name), Path.Combine(AppContext.BaseDirectory, "tools"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Tesseract-OCR") }.Concat((Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator)))
+        foreach (var dir in new[] { Path.Combine(AppContext.BaseDirectory, "tools", name), Path.Combine(AppContext.BaseDirectory, "tools") }
+            .Concat((Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
+            .Append(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Tesseract-OCR")))
         { var path = Path.Combine(dir, executable); if (File.Exists(path)) return path; }
         return null;
     }

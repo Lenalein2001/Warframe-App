@@ -12,6 +12,18 @@ public static class IntegrationTests
     private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
     public static void Register(Action<string, Action> test)
     {
+        test("Explicit PATH selects OCR ahead of the system-installation fallback", () => InDirectory(directory =>
+        {
+            var path = Environment.GetEnvironmentVariable("PATH");
+            var executable = Path.Combine(directory, OperatingSystem.IsWindows() ? "tesseract.exe" : "tesseract");
+            File.WriteAllText(executable, "fixture; never executed");
+            try
+            {
+                Environment.SetEnvironmentVariable("PATH", directory + Path.PathSeparator + path);
+                Check(ScreenCapture.Which("tesseract") == executable, "System OCR installation overrode the explicit test/tool path");
+            }
+            finally { Environment.SetEnvironmentVariable("PATH", path); }
+        }));
         test("Catalog compaction retains region, standing and riven labels without unused exports", () =>
         {
             var catalog = new Catalog
