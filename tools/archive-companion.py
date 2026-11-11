@@ -12,7 +12,7 @@ with tarfile.open(destination, "x:gz") as archive:
         info = archive.gettarinfo(str(path), arcname=path.relative_to(source).as_posix())
         info.uid = info.gid = 0
         info.uname = info.gname = ""
-        info.mode = 0o755 if path.is_dir() or path.name == "WarframeCompanion" or ".so" in path.name else 0o644
+        info.mode = 0o755 if path.is_dir() or path.name in ("WarframeCompanion", "WarframeCompanion.Desktop", "Portable.sh") or ".so" in path.name else 0o644
         if path.is_file():
             with path.open("rb") as stream:
                 archive.addfile(info, stream)

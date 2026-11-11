@@ -35,6 +35,8 @@ foreach ($selfContained in @($false, $true)) {
         New-Item -ItemType Directory -Path (Join-Path $destination 'tools') | Out-Null
         Copy-Item -LiteralPath $TesseractRoot -Destination (Join-Path $destination 'tools/tesseract') -Recurse
         '@echo off' + "`r`n" + 'start "" "%~dp0WarframeCompanion.Desktop.exe" --portable' + "`r`n" | Set-Content -LiteralPath (Join-Path $destination 'Portable.cmd')
+    } else {
+        Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging/linux/Portable.sh') -Destination $destination
     }
     Copy-Item -LiteralPath (Join-Path $repoRoot 'web/fonts/OFL-Rajdhani.txt'), (Join-Path $repoRoot 'web/fonts/OFL-SourceSans3.txt') -Destination (Join-Path $destination 'licenses')
     if ($Runtime.StartsWith('win-')) {
