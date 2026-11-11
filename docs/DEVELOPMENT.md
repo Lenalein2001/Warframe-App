@@ -70,3 +70,11 @@ Package output goes to a unique directory under `artifacts`. No account data is 
 The separate `src/App` CLI remains available for inventory validation, explicit complete imports, current/history inspection, normalized export, SQLite backup and integrity checking. Its data-directory defaults differ from the desktop; supply `--data-dir` when using it against a desktop snapshot database.
 
 See `docs/migration/STATUS.md` and `docs/migration/VALIDATION.md` in the repository for implemented scope and outstanding evidence.
+
+## Inspecting the application
+
+Release packages contain ordinary managed assemblies. Open `app/WarframeCompanion.Desktop.dll`, `app/Host.dll`, `app/Services.dll`, `app/Core.dll` and `app/Persistence.dll` in ILSpy (or the corresponding files in the installed directory). Inspect the web interface under Host's embedded `web/` resources. The small native launcher and .NET apphost executable are not where the C# services live.
+
+The repository's publishing scripts do not use obfuscation, packers, managed native-AOT compilation or single-file extraction. Managed type/method names remain available. Release packages omit separate PDB files; local `dotnet build src/Desktop/Desktop.csproj -c Debug` produces managed debug symbols. For native debugging, use `./tools/build-native.ps1 -Configuration Debug` on Windows or configure CMake with `-DCMAKE_BUILD_TYPE=Debug` on Linux. Native source is in `src/Native/`; optimized machine code is not equivalent to recoverable original C++ source.
+
+Match source to the build's commit before reviewing it. Check `src/Native/memory.cpp` for OS process access, `src/Services/MemoryProvider.cs` for extraction, `src/Services/CompanionRuntime.Game.cs` for scheduling and persistence, and `src/Host/CompanionServer.cs` / `LocalApiCredential.cs` for local API authentication. Review build scripts and dependencies as well: readable source and passing tests are not a publisher approval or a guarantee against all security defects. Do not share account databases, raw memory, screenshots, or `api-*.auth` credentials when reporting findings.

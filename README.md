@@ -105,6 +105,14 @@ Read-only access is not a guarantee of publisher permission or protection from a
 
 See [usage](docs/USAGE.md) for account setup, notifications and command-line options.
 
+## Transparency and scope
+
+This project's purpose is player-facing quality of life: inventory management, missing prime parts, mastery, crafting information and farming plans. It is not a cheat, bot, anti-cheat bypass or game modification framework. Features must remain within that scope; publisher compatibility must be evaluated separately from whether code is read-only.
+
+The build does not apply obfuscation, executable packers, anti-debugging or anti-decompilation measures. C# services ship as ordinary .NET assemblies with readable type and method names; the HTML, CSS and JavaScript are embedded resources. You can inspect the managed DLLs with ILSpy, including the memory-capture and API-authentication code. The launcher's EXE is native; inspect `WarframeCompanion.Desktop.dll`, `Host.dll` and `Services.dll` for the C# implementation.
+
+Optimized C/C++ binaries cannot reliably be reconstructed into the exact original source. Their source and build instructions are available in `src/Native/`; build with debug symbols for source-level inspection. Release packages currently omit separate debug-symbol files to reduce download size, not to conceal behavior. See [inspection instructions](docs/DEVELOPMENT.md#inspecting-the-application).
+
 ## Architecture and development
 
 C# handles application services, persistence and the desktop host. C/C++ handles process reading, image processing and export decoding. The interface uses local HTML, CSS and JavaScript in the system webview.
