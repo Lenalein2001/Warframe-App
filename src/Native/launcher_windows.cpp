@@ -30,6 +30,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     int count = 0;
     auto args = CommandLineToArgvW(GetCommandLineW(), &count);
     if (!args) return static_cast<int>(GetLastError());
+    bool portable = false;
+    bool dataOption = false;
+    for (int i = 1; i < count; ++i) {
+        if (std::wstring(args[i]) == L"--portable") portable = true;
+        if (std::wstring(args[i]) == L"--data-dir") { dataOption = true; ++i; }
+    }
+    if (portable && dataOption) { LocalFree(args); return ERROR_INVALID_PARAMETER; }
     bool explicitData = false;
     std::wstring command = quote(executable.wstring());
     for (int i = 1; i < count; ++i) {
@@ -38,14 +45,18 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
             explicitData = true;
             command += L" --data-dir " + quote((root / L"data").wstring());
         } else {
-            if (arg == L"--data-dir") explicitData = true;
             command += L" " + quote(arg);
+            if (arg == L"--data-dir") {
+                explicitData = true;
+                if (i + 1 < count) command += L" " + quote(args[++i]);
+            }
         }
     }
     LocalFree(args);
     // Never merge or silently overwrite profiles. Existing portable profiles
     // keep their location; a fresh extracted copy shares the installed profile.
-    if (!explicitData && GetFileAttributesW((root / L"data" / L"state.sqlite").c_str()) != INVALID_FILE_ATTRIBUTES)
+    if (!explicitData && (GetFileAttributesW((root / L"data" / L"state.sqlite").c_str()) != INVALID_FILE_ATTRIBUTES
+        || GetFileAttributesW((root / L"data" / L"companion.sqlite").c_str()) != INVALID_FILE_ATTRIBUTES))
         command += L" --data-dir " + quote((root / L"data").wstring());
     STARTUPINFOW startup{}; startup.cb = sizeof(startup);
     PROCESS_INFORMATION process{};

@@ -10,11 +10,11 @@ stage=$(mktemp -d)
 trap 'rm -rf -- "$stage"' EXIT
 mkdir -p "$stage/opt/warframe-companion" "$stage/usr/bin" "$stage/usr/share/applications" "$stage/DEBIAN"
 cp -a "$package/self-contained/." "$stage/opt/warframe-companion/"
-rm "$stage/opt/warframe-companion/Portable.sh"
 chmod 755 "$stage/opt/warframe-companion/WarframeCompanion.Desktop"
 printf '#!/bin/sh\nexec /opt/warframe-companion/WarframeCompanion.Desktop "$@"\n' > "$stage/usr/bin/warframe-companion"
 chmod 755 "$stage/usr/bin/warframe-companion"
 sed 's/^Exec=.*/Exec=warframe-companion/' packaging/linux/warframe-companion.desktop > "$stage/usr/share/applications/warframe-companion.desktop"
+install -Dm644 assets/icon.svg "$stage/usr/share/icons/hicolor/scalable/apps/warframe-companion.svg"
 cat > "$stage/DEBIAN/control" <<EOF
 Package: warframe-companion
 Version: $version

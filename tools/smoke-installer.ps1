@@ -1,6 +1,9 @@
 param([Parameter(Mandatory)][string]$Installer)
 $ErrorActionPreference = 'Stop'
 $setup = (Resolve-Path -LiteralPath $Installer).Path
+if ([IO.Path]::GetFileName($setup) -ne 'WarframeCompanion-win-x64-TestSetup.exe') {
+    throw 'Use build-installer.ps1 -IsolatedTest: release installers share the real app registration.'
+}
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('wfc-install-' + [Guid]::NewGuid().ToString('N'))
 $destination = Join-Path $testRoot 'app'
 $data = Join-Path $testRoot 'profile'

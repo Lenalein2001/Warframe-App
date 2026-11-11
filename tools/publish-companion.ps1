@@ -34,8 +34,6 @@ foreach ($selfContained in @($false, $true)) {
     if ($Runtime.StartsWith('win-')) {
         New-Item -ItemType Directory -Path (Join-Path $destination 'tools') | Out-Null
         Copy-Item -LiteralPath $TesseractRoot -Destination (Join-Path $destination 'tools/tesseract') -Recurse
-    } else {
-        Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging/linux/Portable.sh') -Destination $destination
     }
     Copy-Item -LiteralPath (Join-Path $repoRoot 'web/fonts/OFL-Rajdhani.txt'), (Join-Path $repoRoot 'web/fonts/OFL-SourceSans3.txt') -Destination (Join-Path $destination 'licenses')
     & python (Join-Path $PSScriptRoot 'release-manifest.py') $destination --runtime $Runtime --edition $edition

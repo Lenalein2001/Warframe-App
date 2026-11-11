@@ -6,19 +6,33 @@
 #endif
 
 [Setup]
+SetupIconFile=..\..\assets\icon.ico
+#ifdef IsolatedTest
+AppId={{6FB7A1A8-614C-464E-A5A3-7E0A767D8BB3}
+UninstallDisplayName=Warframe Companion isolated installer test
+#else
 AppId={{6D29E832-E0CD-4E76-BA73-A379438BFB5C}
+#endif
 AppName=Warframe Companion
 AppVersion=0.1.1
 AppPublisher=Lenalein2001
 AppPublisherURL=https://github.com/Lenalein2001/Warframe-App
+#ifdef IsolatedTest
+DefaultDirName={localappdata}\Programs\WarframeCompanion-InstallerTest
+#else
 DefaultDirName={localappdata}\Programs\WarframeCompanion
+#endif
 DefaultGroupName=Warframe Companion
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#OutputDirectory}
+#ifdef IsolatedTest
+OutputBaseFilename=WarframeCompanion-win-x64-TestSetup
+#else
 OutputBaseFilename=WarframeCompanion-win-x64-Setup
+#endif
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

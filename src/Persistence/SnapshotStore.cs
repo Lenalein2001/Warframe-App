@@ -5,6 +5,7 @@ using WarframeCompanion.Core;
 
 namespace WarframeCompanion.Persistence;
 
+public sealed record SnapshotMetadata(long? MasteryRank, double? SourceTimestamp);
 public sealed record CommitResult(long Id, bool Promoted, string Reason);
 public sealed record SnapshotHistory(long Id, string AccountId, string ReadAt, double? SourceTimestamp, bool Complete, bool Current);
 
@@ -135,6 +136,18 @@ public sealed class SnapshotStore
         cmd.CommandText = "SELECT s.payload FROM snapshots s JOIN current_snapshots c ON c.account=s.account AND c.snapshot_id=s.id WHERE c.account=$account";
         cmd.Parameters.AddWithValue("$account", account);
         return cmd.ExecuteScalar() is string json ? JsonSerializer.Deserialize<InventorySnapshot>(json, SnapshotJson.Options) : null;
+    }
+
+    // Account lists only need these scalars, not every stack and equipment entry.
+    public SnapshotMetadata? CurrentMetadata(string account)
+    {
+        InventoryParser.ValidateAccount(account);
+        using var db = Open();
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = "SELECT json_extract(s.payload, '$.masteryRank'), s.source_time FROM snapshots s JOIN current_snapshots c ON c.account=s.account AND c.snapshot_id=s.id WHERE c.account=$account";
+        cmd.Parameters.AddWithValue("$account", account);
+        using var reader = cmd.ExecuteReader();
+        return reader.Read() ? new(reader.IsDBNull(0) ? null : reader.GetInt64(0), reader.IsDBNull(1) ? null : reader.GetDouble(1)) : null;
     }
 
     public IReadOnlyList<SnapshotHistory> History(string account, int limit = 100)

@@ -195,6 +195,33 @@ public static class IntegrationTests
                 Check(SpinWait.SpinUntil(() => J.B(runtime.Summary()["account"]?["playing"]), TimeSpan.FromSeconds(8)), "Late process discovery lost the logged-in account");
             } finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
         }));
+        test("Account summaries keep identity and inventory consistent during switches", () => InDirectory(directory =>
+        {
+            new StateStore(Path.Combine(directory, "state.sqlite")).Write("registry", new RegistryState { Active = "first", Accounts = [new() { Key = "first" }, new() { Key = "second" }] });
+            var store = new SnapshotStore(Path.Combine(directory, "companion.sqlite"));
+            foreach (var key in new[] { "first", "second" })
+                store.Commit(InventoryParser.Parse(Encoding.UTF8.GetBytes("{\"MiscItems\":[],\"LastInventorySync\":100}"), key, true) with { Provider = key });
+            var runtime = new CompanionRuntime(directory, true);
+            try
+            {
+                Parallel.Invoke(
+                    () => { for (var i = 0; i < 100; i++) runtime.Post("account/switch", J.Node(new { key = i % 2 == 0 ? "second" : "first" }), CancellationToken.None).GetAwaiter().GetResult(); },
+                    () => { for (var i = 0; i < 100; i++) { var summary = runtime.Summary(); Check(J.S(summary["account"]!, "key") == J.S(summary["sources"]!["inventory"]!, "source"), "Summary mixed accounts"); } });
+            }
+            finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
+        test("Account metadata follows confirmed snapshots without stale cached state", () => InDirectory(directory =>
+        {
+            var store = new SnapshotStore(Path.Combine(directory, "companion.sqlite"));
+            var first = InventoryParser.Parse(Encoding.UTF8.GetBytes("{\"MiscItems\":[],\"LastInventorySync\":100}"), "first", true) with { MasteryRank = 14 };
+            Check(store.CurrentMetadata("first") == null, "Missing account invented metadata");
+            store.Commit(first);
+            Check(store.CurrentMetadata("first") == new SnapshotMetadata(14, 100), "Confirmed metadata missing");
+            store.Commit(first with { MasteryRank = 20, SourceTimestamp = 200, Complete = false });
+            Check(store.CurrentMetadata("first") == new SnapshotMetadata(14, 100), "Partial capture replaced metadata");
+            new SnapshotStore(Path.Combine(directory, "companion.sqlite")).ClearCurrent("first");
+            Check(store.CurrentMetadata("first") == null, "External clear left stale metadata");
+        }));
         test("Watched inventory cannot cross an account switch during reading", () => InDirectory(directory =>
         {
             new StateStore(Path.Combine(directory, "state.sqlite")).Write("registry", new RegistryState { Active = "first", Accounts = [new() { Key = "first" }, new() { Key = "second" }] });
@@ -530,9 +557,18 @@ public static class IntegrationTests
         test("Update discovery excludes Rust assets, drafts and older builds", () =>
         {
             var release = JsonNode.Parse("""{"tag_name":"v0.10.0","html_url":"https://github.com/Lenalein2001/Warframe-App/releases/tag/v0.10.0","assets":[{"name":"WarframeCompanion-win-x64.zip"}]}""")!;
-            Check(UpdateService.NewerRelease(release, "0.9.0") != null, "New C# release missing");
-            Check(UpdateService.NewerRelease(release, "0.11.0") == null, "Older release offered");
-            release["assets"] = new JsonArray(); Check(UpdateService.NewerRelease(release, "0.9.0") == null, "Rust release offered");
+            Check(UpdateService.NewerRelease(release, "0.9.0", "win-x64") != null, "New C# release missing");
+            Check(UpdateService.NewerRelease(release, "0.11.0", "win-x64") == null, "Older release offered");
+            Check(UpdateService.NewerRelease(release, "0.9.0", "linux-x64") == null, "Windows package offered on Linux");
+            var linux = release.DeepClone(); linux["assets"] = JsonNode.Parse("""[{"name":"WarframeCompanion-linux-x64.deb"}]""");
+            Check(UpdateService.NewerRelease(linux, "0.9.0", "linux-x64") != null, "Linux installer missing");
+            linux["draft"] = true;
+            Check(UpdateService.NewerRelease(linux, "0.9.0", "linux-x64") == null, "Draft release offered");
+            var newer = release.DeepClone(); newer["tag_name"] = "v0.12.0";
+            Check(J.S(UpdateService.LatestRelease([release, newer], "0.9.0", "win-x64")!, "version") == "0.12.0", "Chronology displaced newest version");
+            newer["html_url"] = "https://github.com.evil.invalid/Lenalein2001/Warframe-App/releases/tag/v0.12.0";
+            Check(UpdateService.NewerRelease(newer, "0.9.0", "win-x64") == null, "Foreign host offered");
+            release["assets"] = new JsonArray(); Check(UpdateService.NewerRelease(release, "0.9.0", "win-x64") == null, "Rust release offered");
         });
         test("Settings reject fractional values and allow disabling hotkeys", () =>
         {

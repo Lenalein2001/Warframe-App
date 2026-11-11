@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>Warframe Companion - Prime-inspired helmet</title>
+  <polygon points="128,5 150,57 168,44 185,83 218,61 207,132 183,200 128,250 73,200 49,132 38,61 71,83 88,44 106,57" fill="#D8B873"/>
+  <polygon points="128,23 143,73 163,60 178,99 206,81 195,131 174,193 128,235 82,193 61,131 50,81 78,99 93,60 113,73" fill="#102C38"/>
+  <polygon points="128,30 142,89 128,137 114,89" fill="#F4F0DE"/>
+  <polygon points="94,69 111,87 120,127 87,113 80,99" fill="#E9E8DD"/>
+  <polygon points="162,69 145,87 136,127 169,113 176,99" fill="#C3D5D4"/>
+  <polygon points="56,91 78,109 86,127 71,151 64,125" fill="#F4F0DE"/>
+  <polygon points="200,91 178,109 170,127 185,151 192,125" fill="#C3D5D4"/>
+  <polygon points="84,128 119,140 114,147 89,140" fill="#75F5EC"/>
+  <polygon points="172,128 137,140 142,147 167,140" fill="#75F5EC"/>
+  <polygon points="80,151 106,158 115,202 91,186" fill="#E9E8DD"/>
+  <polygon points="176,151 150,158 141,202 165,186" fill="#C3D5D4"/>
+  <polygon points="128,151 136,175 128,223 120,175" fill="#E1C78B"/>
+</svg>

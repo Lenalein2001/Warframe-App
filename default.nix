@@ -27,6 +27,7 @@ in pkgs.buildDotnetModule {
     gappsWrapperArgs+=(--prefix PATH : ${pkgs.lib.makeBinPath runtime.tools})
   '';
   postInstall = ''
+    install -Dm644 assets/icon.svg $out/share/icons/hicolor/scalable/apps/warframe-companion.svg
     install -Dm644 packaging/linux/warframe-companion.desktop $out/share/applications/warframe-companion.desktop
   '';
   meta = {

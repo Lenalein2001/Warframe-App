@@ -36,7 +36,7 @@ internal static class Program
             {
                 if (options.ContainsKey("--browser")) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(server.LaunchUrl) { UseShellExecute = true });
                 if (options.ContainsKey("--headless") || options.ContainsKey("--browser")) { server.WaitForShutdown().GetAwaiter().GetResult(); return 0; }
-                var window = new PhotinoWindow { LogVerbosity = 0 }.SetTitle("Warframe App").SetUseOsDefaultSize(false).SetSize(new Size(1280, 860)).Center()
+                var window = new PhotinoWindow { LogVerbosity = 0 }.SetIconFile(Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "icon.ico" : "icon.png")).SetTitle("Warframe App").SetUseOsDefaultSize(false).SetSize(new Size(1280, 860)).Center()
                     .SetContextMenuEnabled(false).SetDevToolsEnabled(false).SetTemporaryFilesPath(Path.Combine(directory, "webview")).Load(server.LaunchUrl);
                 using var overlay = new NativeOverlay(window, server.Url, Path.GetFullPath(directory), message => server.Runtime.Event(message, "error"));
                 using var hotkeys = new NativeHotkeys(server.Runtime, server.Url);

@@ -58,7 +58,7 @@ sudo apt install ./WarframeCompanion-linux-x64.deb
 warframe-companion
 ```
 
-**Portable:** extract `WarframeCompanion-linux-x64-portable.tar.gz` into a writable folder and run `./Portable.sh`. The .NET runtime is included; GTK 3, WebKitGTK 4.1, GTK Layer Shell, libnotify, fontconfig, ICU, OpenSSL and English Tesseract must be supplied by your distribution. Screenshot tools depend on the session: scrot/maim for X11, Spectacle for KDE, GNOME Screenshot for GNOME, or grim for wlroots compositors.
+**Portable:** extract `WarframeCompanion-linux-x64-portable.tar.gz` into a writable folder and run `./Portable.sh`. A fresh copy shares your installed profile; existing portable databases in `data/` stay portable. Use `--portable` for separate storage or `--data-dir PATH` for a specific profile. The .NET runtime is included; GTK 3, WebKitGTK 4.1, GTK Layer Shell, libnotify, fontconfig, ICU, OpenSSL and English Tesseract must be supplied by your distribution. Screenshot tools depend on the session: scrot/maim for X11, Spectacle for KDE, GNOME Screenshot for GNOME, or grim for wlroots compositors.
 
 **Nix:** use `nix-build` and launch `./result/bin/WarframeCompanion.Desktop`. See [development](docs/DEVELOPMENT.md) for details.
 

@@ -2,7 +2,7 @@ name: Windows packages
 on:
   push:
     branches: [senpai]
-    paths: ['src/**', 'web/**', 'tests/**', 'tools/**', 'packaging/**', 'licenses/**', '*.props', '*.slnx', 'LICENSE', 'docs/USAGE.md', '.github/workflows/windows.yml']
+    paths: ['assets/**', 'src/**', 'web/**', 'tests/**', 'tools/**', 'packaging/**', 'licenses/**', '*.props', '*.slnx', 'LICENSE', 'docs/USAGE.md', '.github/workflows/windows.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -31,7 +31,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Package smoke tests failed.' }
           $package = Get-ChildItem artifacts/companion-win-x64-* -Directory | Select-Object -Last 1
           ./tools/build-installer.ps1 -PackageDirectory $package.FullName
-          ./tools/smoke-installer.ps1 -Installer (Join-Path $package.FullName 'WarframeCompanion-win-x64-Setup.exe')
+          ./tools/build-installer.ps1 -PackageDirectory $package.FullName -IsolatedTest
+          ./tools/smoke-installer.ps1 -Installer (Join-Path $package.FullName 'installer-test/WarframeCompanion-win-x64-TestSetup.exe')
       - uses: actions/upload-artifact@v4
         with:
           name: WarframeCompanion-win-x64
