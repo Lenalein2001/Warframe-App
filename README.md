@@ -108,5 +108,3 @@ Build instructions and test commands are in [DEVELOPMENT.md](docs/DEVELOPMENT.md
 [MIT](LICENSE). Third-party license notices are included in [licenses](licenses/) and the distributed packages. This project builds on the original [Warframe-App](https://github.com/Diskutabell/Warframe-App) interface and functionality.
 
 Warframe is a trademark of Digital Extremes. This is an independent community project and is not affiliated with or endorsed by Digital Extremes.
-
-

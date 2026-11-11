@@ -4,7 +4,7 @@ namespace WarframeCompanion.Services;
 
 public sealed class UpdateService(CachedJson cache)
 {
-    public const string Version = "0.1.0-csharp";
+    public const string Version = "0.1.0";
     public JsonNode? Available { get; private set; }
     public static JsonNode? NewerRelease(JsonNode release, string current)
     {
