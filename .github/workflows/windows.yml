@@ -3,11 +3,9 @@ on:
   push:
     branches: [senpai]
     paths: ['src/**', 'web/**', 'tests/**', 'tools/**', 'packaging/**', 'licenses/**', '*.props', '*.slnx', 'LICENSE', 'docs/USAGE.md', '.github/workflows/windows.yml']
-  release:
-    types: [published]
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 jobs:
   package:
     runs-on: windows-latest
@@ -39,19 +37,3 @@ jobs:
             artifacts/companion-win-x64-*/*.zip
             artifacts/companion-win-x64-*/measurements.json
             artifacts/companion-win-x64-*/*Setup.exe
-      - name: Attach C# packages to release
-        if: github.event_name == 'release'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          $folder = Get-ChildItem artifacts/companion-win-x64-* -Directory | Select-Object -Last 1
-          foreach ($edition in @('framework-dependent', 'self-contained')) {
-            $asset = Join-Path $folder.FullName "WarframeCompanion-win-x64-$edition.zip"
-            Copy-Item -LiteralPath (Join-Path $folder.FullName "$edition.zip") -Destination $asset
-            gh release upload "$env:RELEASE_TAG" "$asset" --repo "$env:GITHUB_REPOSITORY"
-            if ($LASTEXITCODE -ne 0) { throw 'Release upload failed.' }
-          }
-          gh release upload "$env:RELEASE_TAG" (Join-Path $folder.FullName 'WarframeCompanion-win-x64-Setup.exe') --repo "$env:GITHUB_REPOSITORY"
-          if ($LASTEXITCODE -ne 0) { throw 'Installer upload failed.' }
