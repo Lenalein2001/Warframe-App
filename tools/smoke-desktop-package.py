@@ -1,5 +1,6 @@
 """Exercise shipped executables in isolated storage, including settings persistence."""
 import json
+import os
 import pathlib
 import socket
 import subprocess
@@ -10,13 +11,15 @@ import urllib.error
 import urllib.request
 import zipfile
 
+local_http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
 packages = pathlib.Path(sys.argv[1]).resolve()
 
 def request(port, route, body=None):
     payload = None if body is None else json.dumps(body).encode()
     req = urllib.request.Request(f'http://127.0.0.1:{port}/{route}', data=payload,
                                  headers={'Content-Type': 'application/json', 'Authorization': (data / f'api-{port}.auth').read_text().removeprefix('Authorization: ').strip() if (data / f'api-{port}.auth').exists() else ''})
-    with urllib.request.urlopen(req, timeout=5) as response:
+    with local_http.open(req, timeout=5) as response:
         return json.load(response) if route.startswith('api/') else response.read()
 
 for edition in ('framework-dependent', 'self-contained'):
@@ -59,7 +62,11 @@ for edition in ('framework-dependent', 'self-contained'):
                         assert settings['notify'] is True and settings['hotkey_rewards'] == ''
                     else:
                         request(port, 'api/settings', {'notify': True, 'hotkey_rewards': ''})
-                    request(port, 'api/quit', {})
+                    # Local credentials must never be sent through configured proxies.
+                    command = subprocess.run([str(executable), 'quit', '--data-dir', str(data), '--port', str(port)],
+                                             env={**os.environ, 'HTTP_PROXY': 'http://127.0.0.1:1', 'ALL_PROXY': 'http://127.0.0.1:1', 'NO_PROXY': ''},
+                                             capture_output=True, timeout=30, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                    assert command.returncode == 0, 'Authenticated desktop command failed with a proxy configured'
                     assert process.wait(timeout=15) == 0, 'Unclean application shutdown'
                     print(f'{edition}: {"restart" if restart else "first start"}, isolated data and clean shutdown passed')
                 finally:

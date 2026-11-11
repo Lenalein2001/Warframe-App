@@ -7,6 +7,8 @@ import time
 import urllib.parse
 import urllib.request
 
+local_http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--url', default='http://127.0.0.1:8642')
 parser.add_argument('--data-dir', type=pathlib.Path, required=True)
@@ -24,7 +26,7 @@ for route in ('state', 'inventory', 'mastery', 'primes', 'relics'):
     timings = []
     for sample in range(args.rounds + 3):
         start = time.perf_counter()
-        with urllib.request.urlopen(urllib.request.Request(args.url.rstrip('/') + '/api/' + route, headers={'Authorization': credential}), timeout=30) as response:
+        with local_http.open(urllib.request.Request(args.url.rstrip('/') + '/api/' + route, headers={'Authorization': credential}), timeout=30) as response:
             body = response.read()
         elapsed = (time.perf_counter() - start) * 1000
         json.loads(body)
