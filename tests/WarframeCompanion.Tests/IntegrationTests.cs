@@ -130,6 +130,27 @@ public static class IntegrationTests
             }
             finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
         }));
+        test("Broken watched inventory does not block profiles and is retried after repair", () => InDirectory(directory =>
+        {
+            var path = Path.Combine(directory, "EE.log"); File.WriteAllText(path, "Sys [Info]: Logged in Fixture\n");
+            var inventory = Path.Combine(directory, "inventory.json"); File.WriteAllText(inventory, "{");
+            var store = new StateStore(Path.Combine(directory, "state.sqlite"));
+            const string id = "0123456789abcdef01234567";
+            store.Write("registry", new RegistryState { Active = "fixture", Accounts = [new() { Key = "fixture", Name = "Fixture", Id = id }] });
+            var settings = Settings.Defaults(); settings["ee_log_path"] = path; settings["profile_auto_refresh"] = true;
+            settings["inventory_json_path"] = inventory; settings["memory_scan_enabled"] = false; settings["ocr_enabled"] = false;
+            store.Write("settings", settings);
+            var handler = new PendingProfileHandler(); var runtime = new CompanionRuntime(directory, false, false, handler);
+            try
+            {
+                runtime.StartGameWatcher();
+                Check(SpinWait.SpinUntil(() => handler.Called, TimeSpan.FromSeconds(8)), "Broken inventory blocked automatic profile refresh");
+                File.WriteAllText(inventory, """{"MiscItems":[],"Suits":[],"Recipes":[],"XPInfo":[],"LastInventorySync":123}""");
+                var snapshots = new SnapshotStore(Path.Combine(directory, "companion.sqlite"));
+                Check(SpinWait.SpinUntil(() => snapshots.Current(id) != null, TimeSpan.FromSeconds(8)), "Repaired inventory file was not retried");
+            }
+            finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
         test("Slow public profiles do not delay game log detection", () => InDirectory(directory =>
         {
             var path = Path.Combine(directory, "EE.log"); File.WriteAllText(path, "Sys [Info]: Logged in Fixture\n");

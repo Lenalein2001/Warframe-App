@@ -150,13 +150,18 @@ public sealed partial class CompanionRuntime
                 Log.Poll(J.S(config, "ee_log_path"));
                 if (J.S(config, "inventory_json_path") is { } file && File.Exists(file))
                 {
-                    var info = new FileInfo(file); var stamp = (file, info.LastWriteTimeUtc, info.Length);
-                    if (watchedInventory != stamp && info.Length <= InventoryParser.MaxBytes)
+                    try
                     {
-                        // Set only after a successful parse, so a file being rewritten is retried.
-                        var body = JsonNode.Parse(await File.ReadAllTextAsync(file, stop.Token)) ?? throw new InventoryException("Watched inventory file is empty.");
-                        await Post("inventory/import", body, stop.Token); watchedInventory = stamp;
+                        var info = new FileInfo(file); var stamp = (file, info.LastWriteTimeUtc, info.Length);
+                        if (watchedInventory != stamp && info.Length <= InventoryParser.MaxBytes)
+                        {
+                            // Set only after a successful parse, so a file being rewritten is retried.
+                            var body = JsonNode.Parse(await File.ReadAllTextAsync(file, stop.Token)) ?? throw new InventoryException("Watched inventory file is empty.");
+                            await Post("inventory/import", body, stop.Token); watchedInventory = stamp;
+                        }
                     }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException or InventoryException or JsonException)
+                    { Event("Inventory file import: " + (e is InventoryException ? e.Message : e.GetType().Name), "error"); }
                 }
                 if (J.B(config["memory_scan_enabled"]) && GameProcess is { } pid && (memoryScan == null || memoryScan.IsCompleted) && (memoryRequested || J.Now >= nextMemory) && J.Now >= lastMemory + 10)
                 {
