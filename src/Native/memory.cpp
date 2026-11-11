@@ -1,6 +1,8 @@
 #include "native.h"
 #include <algorithm>
 #include <chrono>
+#include <cstring>
+#include <cwchar>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -31,14 +33,34 @@ class ProcessReader {
     HANDLE handle;
 #else
     int handle;
+    int directory;
 #endif
-    int pid;
 public:
-    explicit ProcessReader(int id) : pid(id) {
+    explicit ProcessReader(int id) {
 #ifdef _WIN32
         handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, static_cast<DWORD>(id));
+        // Validate the opened handle, not a name looked up before opening a reused PID.
+        // Self-reads support isolated diagnostics; production discovery selects Warframe.
+        if (handle && static_cast<DWORD>(id) != GetCurrentProcessId()) {
+            wchar_t image[32768]{}; DWORD length = 32768;
+            bool expected = false;
+            if (QueryFullProcessImageNameW(handle, 0, image, &length)) {
+                const auto separator = std::wcsrchr(image, L'\\');
+                expected = _wcsicmp(separator ? separator + 1 : image, L"Warframe.x64.exe") == 0;
+            }
+            if (!expected) { CloseHandle(handle); handle = nullptr; }
+        }
 #else
-        handle = open(("/proc/" + std::to_string(id) + "/mem").c_str(), O_RDONLY | O_CLOEXEC);
+        directory = open(("/proc/" + std::to_string(id)).c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        handle = directory >= 0 ? openat(directory, "mem", O_RDONLY | O_CLOEXEC) : -1;
+        if (handle >= 0 && id != getpid()) {
+            const auto comm = openat(directory, "comm", O_RDONLY | O_CLOEXEC);
+            char buffer[64]{};
+            const auto count = comm >= 0 ? ::read(comm, buffer, sizeof(buffer) - 1) : -1;
+            if (comm >= 0) close(comm);
+            if (count > 0 && buffer[count - 1] == '\n') buffer[count - 1] = 0;
+            if (std::strcmp(buffer, "Warframe.x64") != 0 && std::strcmp(buffer, "Warframe.x64.exe") != 0 && std::strcmp(buffer, "Warframe.x64.ex") != 0) { close(handle); handle = -1; }
+        }
 #endif
     }
     ~ProcessReader() {
@@ -46,6 +68,7 @@ public:
         if (handle) CloseHandle(handle);
 #else
         if (handle >= 0) close(handle);
+        if (directory >= 0) close(directory);
 #endif
     }
     ProcessReader(const ProcessReader&) = delete;
@@ -85,7 +108,7 @@ public:
             address = start + size;
         }
 #else
-        std::ifstream maps("/proc/" + std::to_string(pid) + "/maps");
+        std::ifstream maps("/proc/self/fd/" + std::to_string(directory) + "/maps");
         std::string line;
         while (keepGoing() && std::getline(maps, line)) {
             std::istringstream fields(line);

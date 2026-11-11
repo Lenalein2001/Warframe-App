@@ -135,7 +135,7 @@ public static class MemoryProvider
         cancellation.ThrowIfCancellationRequested();
         if (callbackFailure != null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(callbackFailure).Throw();
         if (result < 0) throw new InventoryException(result == -1
-            ? "The operating system denied read-only game memory access."
+            ? "The target is no longer Warframe or the operating system denied read-only access."
             : "The native memory scan failed; confirmed inventory was retained.");
         return best ?? throw new InventoryException(result == 2
             ? "No complete inventory found within the scan budget; retry after a game sync."

@@ -7,10 +7,13 @@
 #include <chrono>
 #include <cstring>
 #include <source_location>
+#include <string>
 #ifdef _WIN32
 #include <windows.h>
 #else
 #include <unistd.h>
+#include <sys/wait.h>
+#include <signal.h>
 #endif
 static void check(bool ok, const std::source_location where = std::source_location::current()) {
     if (!ok) throw std::runtime_error("native regression failed at line " + std::to_string(where.line()));
@@ -48,7 +51,33 @@ static void memory_test() {
     check(wfc_scan_memory(pid, candidate, cancel, &found) == 1);
     check(wfc_scan_memory(-1, candidate, progress, &found) == -2);
 }
-int main() {
+static void reject_other_process() {
+    bool read = false;
+    const auto candidate = [](const std::uint8_t*, std::size_t, std::size_t, void* context) -> int { *static_cast<bool*>(context) = true; return 0; };
+    const auto progress = [](std::uint64_t, void*) -> int { return 1; };
+#ifdef _WIN32
+    wchar_t executable[32768]{}; check(GetModuleFileNameW(nullptr, executable, 32768) != 0);
+    std::wstring command = L"\"" + std::wstring(executable) + L"\" --wait";
+    STARTUPINFOW startup{}; startup.cb = sizeof(startup); PROCESS_INFORMATION child{};
+    check(CreateProcessW(executable, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &child));
+    const auto result = wfc_scan_memory(static_cast<int>(child.dwProcessId), candidate, progress, &read);
+    TerminateProcess(child.hProcess, 0); WaitForSingleObject(child.hProcess, 5000);
+    CloseHandle(child.hThread); CloseHandle(child.hProcess);
+#else
+    const auto child = fork(); check(child >= 0);
+    if (child == 0) { sleep(30); _exit(0); }
+    const auto result = wfc_scan_memory(static_cast<int>(child), candidate, progress, &read);
+    kill(child, SIGTERM); waitpid(child, nullptr, 0);
+#endif
+    check(result == -1 && !read);
+}
+int main(int argc, char** argv) {
+#ifdef _WIN32
+    if (argc == 2 && std::strcmp(argv[1], "--wait") == 0) { Sleep(30000); return 0; }
+#else
+    (void)argc; (void)argv;
+#endif
+    reject_other_process();
     const std::uint8_t color_rows[] = {1,2,3,255,4,5,6,255,99,99,99,99,7,8,9,255,10,11,12,255,99,99,99,99};
     std::uint8_t rgb[12]{};
     check(wfc_bgra_to_rgb(color_rows, 2, 2, 12, rgb, sizeof(rgb)) == 1);
