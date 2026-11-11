@@ -113,6 +113,57 @@ public static class IntegrationTests
             Check(updated.Text.StartsWith("-- User configuration", StringComparison.Ordinal) && updated.Text.EndsWith("-- User footer\n", StringComparison.Ordinal) && !updated.Text.Contains("hl.bind"), "Disabling keys changed user configuration");
             try { CompositorBindings.MergeLua("-- >>> warframeproject hotkeys (managed)", []); throw new Exception("Broken managed block accepted"); } catch (InventoryException) { }
         });
+        test("Profile Retry-After survives restart without another service request", () => InDirectory(directory =>
+        {
+            new StateStore(Path.Combine(directory, "state.sqlite")).Write("registry", new RegistryState { Active = "fixture", Accounts = [new() { Key = "fixture", Id = "0123456789abcdef01234567" }] });
+            var handler = new RefusedProfileHandler();
+            for (var pass = 0; pass < 2; pass++)
+            {
+                var runtime = new CompanionRuntime(directory, false, false, handler);
+                try { try { runtime.Post("profile/refresh", new JsonObject(), CancellationToken.None).GetAwaiter().GetResult(); throw new Exception("Refused profile accepted"); } catch (InventoryException) { } }
+                finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+            }
+            Check(handler.Calls == 1, "Restart bypassed profile backoff");
+            Check(new StateStore(Path.Combine(directory, "state.sqlite")).Read<DateTimeOffset>("profile-request-after") > DateTimeOffset.UtcNow.AddMinutes(30), "Retry-After was ignored");
+        }));
+        test("Late process detection retains the account already identified by the log", () => InDirectory(directory =>
+        {
+            var path = Path.Combine(directory, "EE.log"); File.WriteAllText(path, "Sys [Info]: Logged in Fixture\n");
+            var settings = Settings.Defaults(); settings["ee_log_path"] = path; settings["ocr_enabled"] = false;
+            new StateStore(Path.Combine(directory, "state.sqlite")).Write("settings", settings);
+            int? detected = null;
+            var runtime = new CompanionRuntime(directory, true) { FindGameProcess = () => detected };
+            try {
+                runtime.StartGameWatcher();
+                Check(runtime.Summary()["account"]?["key"] != null, "Log account missing");
+                detected = 123;
+                Check(SpinWait.SpinUntil(() => J.B(runtime.Summary()["account"]?["playing"]), TimeSpan.FromSeconds(8)), "Late process discovery lost the logged-in account");
+            } finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
+        test("Watched inventory cannot cross an account switch during reading", () => InDirectory(directory =>
+        {
+            new StateStore(Path.Combine(directory, "state.sqlite")).Write("registry", new RegistryState { Active = "first", Accounts = [new() { Key = "first" }, new() { Key = "second" }] });
+            var runtime = new CompanionRuntime(directory, true);
+            var bytes = Encoding.UTF8.GetBytes("{\"MiscItems\":[],\"Suits\":[],\"Recipes\":[],\"XPInfo\":[],\"LastInventorySync\":100}");
+            try {
+                using var input = new CallbackStream(bytes, () => runtime.Post("account/switch", JsonNode.Parse("{\"key\":\"second\"}")!, CancellationToken.None).GetAwaiter().GetResult());
+                Check(!runtime.ImportWatchedInventory(input, CancellationToken.None).GetAwaiter().GetResult(), "Changed account accepted watched file");
+                var snapshots = new SnapshotStore(Path.Combine(directory, "companion.sqlite"));
+                Check(snapshots.History("first").Count == 0 && snapshots.History("second").Count == 0, "Discarded file modified inventory");
+                using var stable = new MemoryStream(bytes);
+                Check(runtime.ImportWatchedInventory(stable, CancellationToken.None).GetAwaiter().GetResult(), "Stable account could not import");
+            } finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
+        test("Bounded reads reject growth and malformed log integers do not stop parsing", () =>
+        {
+            using var exact = new MemoryStream(new byte[16]);
+            Check(LimitedRead.Bytes(exact, 16, CancellationToken.None).GetAwaiter().GetResult().Length == 16, "Exact limit rejected");
+            using var larger = new MemoryStream(new byte[100]);
+            try { LimitedRead.Bytes(larger, 16, CancellationToken.None).GetAwaiter().GetResult(); throw new Exception("Oversized stream accepted"); } catch (InventoryException) { }
+            Check(larger.Position == 17, "Reader consumed beyond the limit probe");
+            Check(!GameLog.Parse("OnMasteryIconReady1(Loaded:/Rank99999999999999999999_icon)").Any(), "Overflow rank accepted");
+            Check(!GameLog.Parse("RollDuviriOffers /Lotus/Item generated as an owned Cave selection for category: 99999999999999999999").Any(s => s.Kind == "duviri-item"), "Overflow category accepted");
+        });
         test("API credentials rotate, stay private and are removed on shutdown", () => InDirectory(directory =>
         {
             using var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start();
@@ -467,6 +518,22 @@ public static class IntegrationTests
             history.ImportLegacy(historyPath); Check(history.Entries.Count == 1, "History imported twice");
         }));
         test("Loopback HTTP serves preserved UI and enforces validation and persistence", () => InDirectory(directory => HttpTest(directory).GetAwaiter().GetResult()));
+    }
+    private sealed class RefusedProfileHandler : HttpMessageHandler
+    {
+        public int Calls;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Calls++; var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            response.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(DateTimeOffset.UtcNow.AddHours(1));
+            return Task.FromResult(response);
+        }
+    }
+    private sealed class CallbackStream(byte[] bytes, Action beforeRead) : MemoryStream(bytes)
+    {
+        private bool called;
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        { if (!called) { called = true; beforeRead(); } return base.ReadAsync(buffer, cancellationToken); }
     }
     private sealed class TimeoutProfileHandler : HttpMessageHandler
     {

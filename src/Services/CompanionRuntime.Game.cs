@@ -132,6 +132,7 @@ public sealed partial class CompanionRuntime
         if (signal.Kind == "rewards") RewardScreenOpened?.Invoke();
         if (signal.Kind == "rewards-closed") RewardScreenClosed?.Invoke();
     }
+    internal Func<int?> FindGameProcess { get; set; } = MemoryProvider.GamePid;
     private async Task GameLoop()
     {
         Log.Signal += LogSignal;
@@ -139,13 +140,14 @@ public sealed partial class CompanionRuntime
         {
             try
             {
-                var config = GetSettings(); var detected = MemoryProvider.GamePid();
+                var config = GetSettings(); var detected = FindGameProcess();
                 lock (sync)
                 {
                     if (GameProcess != detected)
                     {
+                        if (GameProcess != null || detected == null) playingKey = null;
                         GameProcess = detected; gameSession++; memoryCancellation?.Cancel(); memoryRequested = detected != null;
-                        playingKey = null; lastSuccessfulScan = null; ScanError = null;
+                        lastSuccessfulScan = null; ScanError = null;
                     }
                 }
                 Log.Poll(J.S(config, "ee_log_path"));
@@ -157,8 +159,8 @@ public sealed partial class CompanionRuntime
                         if (watchedInventory != stamp && info.Length <= InventoryParser.MaxBytes)
                         {
                             // Set only after a successful parse, so a file being rewritten is retried.
-                            var body = JsonNode.Parse(await File.ReadAllTextAsync(file, stop.Token)) ?? throw new InventoryException("Watched inventory file is empty.");
-                            await Post("inventory/import", body, stop.Token); watchedInventory = stamp;
+                            await using var input = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 16384, true);
+                            await ImportWatchedInventory(input, stop.Token); watchedInventory = stamp;
                         }
                     }
                     catch (Exception e) when (e is IOException or UnauthorizedAccessException or InventoryException or JsonException)
@@ -189,6 +191,20 @@ public sealed partial class CompanionRuntime
             try { await Task.Delay(TimeSpan.FromSeconds(2), stop.Token); } catch (OperationCanceledException) { break; }
         }
         Log.Signal -= LogSignal;
+    }
+    internal async Task<bool> ImportWatchedInventory(Stream input, CancellationToken cancellation)
+    {
+        string? key, identity; long session;
+        lock (sync) { key = Active?.Key; identity = Active?.Id ?? key; session = gameSession; }
+        if (identity == null) throw new InventoryException("Waiting for an account before importing the watched inventory file.");
+        var bytes = await LimitedRead.Bytes(input, InventoryParser.MaxBytes, cancellation);
+        var body = JsonNode.Parse(bytes) ?? throw new InventoryException("Watched inventory file is empty.");
+        lock (sync)
+        {
+            if (Active?.Key != key || (Active?.Id ?? Active?.Key) != identity || gameSession != session)
+            { Event("Account changed while reading the inventory file; reading discarded. Update the file to import again.", "info"); return false; }
+            ImportInventory(body, identity, cancellation); return true;
+        }
     }
     private async Task RefreshAutomaticProfile()
     {

@@ -26,7 +26,9 @@ public sealed class GameLog
     public static string? PlayerName(string? text) => text == null ? null : StripGlyphs(text).Trim();
     public static IEnumerable<LogSignal> Candidates(string line, string? player)
     {
-        var named = !string.IsNullOrWhiteSpace(player) && Regex.IsMatch(line, @"(?<![\p{L}\p{N}_])" + Regex.Escape(StripGlyphs(player)) + @"(?![\p{L}\p{N}_])");
+        var playerName = string.IsNullOrWhiteSpace(player) ? null : StripGlyphs(player);
+        var named = !string.IsNullOrEmpty(playerName) && line.Contains(playerName, StringComparison.Ordinal)
+            && Regex.IsMatch(line, @"(?<![\p{L}\p{N}_])" + Regex.Escape(playerName) + @"(?![\p{L}\p{N}_])");
         var ownReward = line.Contains("VoidProjections: Sending reward info from", StringComparison.Ordinal) && line.Contains("to host!", StringComparison.Ordinal);
         if (!named && !ownReward) yield break;
         var ids = Regex.Matches(line, @"(?<![0-9a-f])[0-9a-f]{24}(?![0-9a-f])").Select(m => m.Value).Where(id => id.Any(c => c != '0')).ToArray();
@@ -40,7 +42,8 @@ public sealed class GameLog
         if (name.Success) yield return new("login", StripGlyphs(name.Groups.Cast<Group>().Skip(1).First(g => g.Success).Value), id.Success ? id.Groups[1].Value : null);
         else if (id.Success) yield return new("identity", Id: id.Groups[1].Value);
         var badge = Regex.Match(line, @"OnMasteryIconReady1\(Loaded:[^)]*?/Rank(\d+)(?:to(\d+))?_");
-        if (badge.Success) yield return new("badge", Rank: int.Parse(badge.Groups[1].Value, CultureInfo.InvariantCulture), RankMax: badge.Groups[2].Success ? int.Parse(badge.Groups[2].Value, CultureInfo.InvariantCulture) : null);
+        if (badge.Success && int.TryParse(badge.Groups[1].Value, out var rank) && (!badge.Groups[2].Success || int.TryParse(badge.Groups[2].Value, out _)))
+            yield return new("badge", Rank: rank, RankMax: badge.Groups[2].Success ? int.Parse(badge.Groups[2].Value, CultureInfo.InvariantCulture) : null);
         if (new[] { "OpenVoidProjectionRewardScreen", "ProjectionRewardChoice.lua: Pause countdown done", "VoidProjections: GetVoidProjectionRewards", "ProjectionRewardChoice.lua: Got rewards" }.Any(s => line.Contains(s, StringComparison.Ordinal))) yield return new("rewards");
         if (line.Contains("Relic reward screen shut down", StringComparison.Ordinal)) yield return new("rewards-closed");
         if (new[] { "MissionSucceeded", "MissionFailed", "EndOfMatch.lua: Mission Succeeded", "EndOfMatch.lua: Mission Failed", "ExitLevel", "Inventory updated" }.Any(s => line.Contains(s, StringComparison.OrdinalIgnoreCase))) yield return new("sync");
@@ -48,7 +51,7 @@ public sealed class GameLog
         {
             if (line.Contains("Generating new Duviri offers", StringComparison.Ordinal)) yield return new("duviri-start");
             var offer = Regex.Match(line, @"(/Lotus/\S+) generated as an (owned|unowned) Cave selection for category:\s*(\d+)");
-            if (offer.Success) yield return new("duviri-item", offer.Groups[1].Value, offer.Groups[2].Value, int.Parse(offer.Groups[3].Value, CultureInfo.InvariantCulture));
+            if (offer.Success && int.TryParse(offer.Groups[3].Value, out var category)) yield return new("duviri-item", offer.Groups[1].Value, offer.Groups[2].Value, category);
             if (line.Contains("Duviri Seed:", StringComparison.Ordinal)) yield return new("duviri-done");
         }
     }

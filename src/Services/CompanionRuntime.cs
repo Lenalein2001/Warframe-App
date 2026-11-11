@@ -51,11 +51,12 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
         : this(directory, offline, migrateLegacy, null) { }
     internal CompanionRuntime(string directory, bool offline, bool migrateLegacy, HttpMessageHandler? profileHandler)
     {
-        profileClient = profileHandler == null ? new() : new(profileHandler);
+        profileClient = profileHandler == null ? new(new HttpClientHandler { AllowAutoRedirect = false }) : new(profileHandler);
         profileClient.Timeout = TimeSpan.FromSeconds(20);
         DataDirectory = Path.GetFullPath(directory); Offline = offline;
         Directory.CreateDirectory(DataDirectory);
         store = new(Path.Combine(DataDirectory, "state.sqlite")); snapshots = new(Path.Combine(DataDirectory, "companion.sqlite"));
+        nextProfile = store.Read<DateTimeOffset?>("profile-request-after") ?? DateTimeOffset.MinValue;
         registry = store.Read<RegistryState>("registry") ?? new(); settings = store.Read<JsonObject>("settings") ?? Settings.Defaults();
         if (migrateLegacy && store.Read<RegistryState>("registry") == null)
         {
@@ -243,13 +244,7 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
             case "profile/refresh": await RefreshProfile(cancellation); break;
             case "inventory/import":
                 string accountId; lock (sync) { if (Active == null) EditAccount(_ => { }); accountId = Active!.Id ?? Active.Key; }
-                var snapshot = InventoryParser.Parse(JsonSerializer.SerializeToUtf8Bytes(body), accountId, complete: false);
-                var payload = body["InventoryJson"] ?? body;
-                if (payload is JsonValue val && val.TryGetValue<string>(out var raw)) payload = JsonNode.Parse(raw)!;
-                var complete = new[] { "MiscItems", "Suits", "Recipes", "XPInfo" }.All(k => payload[k] is JsonArray);
-                var result = snapshots.Commit(snapshot with { Complete = complete, Provider = "imported file", Warnings = complete ? snapshot.Warnings.Where(w => !w.StartsWith("Partial observation", StringComparison.Ordinal)).ToArray() : snapshot.Warnings }, cancellation);
-                Event(result.Reason, result.Promoted ? "info" : "error");
-                return J.Node(new { ok = true, promoted = result.Promoted, message = result.Reason });
+                return ImportInventory(body, accountId, cancellation);
             case "inventory/clear": lock (sync) { if (Active is { } active) snapshots.ClearCurrent(active.Id ?? active.Key); } break;
             case "riven/grade": return RivenService.GradeBody(Catalog, body);
             case "riven/read-fingerprint":
@@ -283,6 +278,16 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
         }
         return J.Node(new { ok = true });
     }
+    private JsonNode ImportInventory(JsonNode body, string accountId, CancellationToken cancellation)
+    {
+        var snapshot = InventoryParser.Parse(JsonSerializer.SerializeToUtf8Bytes(body), accountId, complete: false);
+        var payload = body["InventoryJson"] ?? body;
+        if (payload is JsonValue val && val.TryGetValue<string>(out var raw)) payload = JsonNode.Parse(raw)!;
+        var complete = new[] { "MiscItems", "Suits", "Recipes", "XPInfo" }.All(k => payload[k] is JsonArray);
+        var result = snapshots.Commit(snapshot with { Complete = complete, Provider = "imported file", Warnings = complete ? snapshot.Warnings.Where(w => !w.StartsWith("Partial observation", StringComparison.Ordinal)).ToArray() : snapshot.Warnings }, cancellation);
+        Event(result.Reason, result.Promoted ? "info" : "error");
+        return J.Node(new { ok = true, promoted = result.Promoted, message = result.Reason });
+    }
     private async Task RefreshProfile(CancellationToken cancellation)
     {
         if (Offline) throw new InventoryException("Offline mode is enabled.");
@@ -292,10 +297,15 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
         {
             if (DateTimeOffset.UtcNow < nextProfile) throw new InventoryException("Please wait before requesting another public profile.");
             nextProfile = DateTimeOffset.UtcNow.AddSeconds(300);
+            store.Write("profile-request-after", nextProfile);
             var host = J.S(GetSettings(), "platform") switch { "ps4" => "api-ps4", "xb1" => "api-xb1", "swi" => "api-swi", _ => "api" };
-            using var response = await profileClient.GetAsync($"https://{host}.warframe.com/cdn/getProfileViewingData.php?playerId={Uri.EscapeDataString(id)}", cancellation);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(20)); cancellation = timeout.Token;
+            using var response = await profileClient.GetAsync($"https://{host}.warframe.com/cdn/getProfileViewingData.php?playerId={Uri.EscapeDataString(id)}", HttpCompletionOption.ResponseHeadersRead, cancellation);
+            var retry = response.Headers.RetryAfter;
+            var retryAt = retry?.Date ?? (retry?.Delta is { } delay ? DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(delay.TotalSeconds, 0, (DateTimeOffset.MaxValue - DateTimeOffset.UtcNow).TotalSeconds - 1)) : (DateTimeOffset?)null);
+            if (retryAt > nextProfile) { nextProfile = retryAt.Value; store.Write("profile-request-after", nextProfile); }
             if (!response.IsSuccessStatusCode) throw new InventoryException("Profile service refused the request. Wait before retrying, or import a saved profile.");
-            var parsed = StateStore.ParseProfile(JsonNode.Parse(await response.Content.ReadAsStringAsync(cancellation)) ?? throw new InventoryException("Profile service returned no data."));
+            var parsed = StateStore.ParseProfile(JsonNode.Parse(await LimitedRead.Bytes(await response.Content.ReadAsStreamAsync(cancellation), InventoryParser.MaxBytes, cancellation)) ?? throw new InventoryException("Profile service returned no data."));
             if (parsed.Id != null && parsed.Id != id) throw new InventoryException("Profile service returned another account.");
             lock (sync)
             {
