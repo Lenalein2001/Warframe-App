@@ -3,6 +3,8 @@
 rec {
   # Linked libraries.
   libraries = with pkgs; [
+    glib              # Photino's prebuilt library loads these directly via the dynamic linker
+    stdenv.cc.cc.lib
     gtk3
     webkitgtk_4_1
     libsoup_3
