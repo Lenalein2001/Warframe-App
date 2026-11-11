@@ -116,7 +116,8 @@ export default {
         <div id="memscan">${memscan(S)}</div>`)}
 
       ${section("Notifications", `
-        ${tools["notify-send"] ? "" : `<div class="callout" style="margin-bottom:8px">notify-send was not found, so no notification can be shown.</div>`}
+        <p class="muted">Uses your desktop's native notifications and respects its notification settings.</p>
+        ${S.desktop ? `<button id="testNotification" style="margin-bottom:12px">Send a test notification</button>` : `<p class="muted">Open the desktop app to receive notifications.</p>`}
         ${toggle("notify_fissures", "Watched fissures", `Watch a tier and mission with the bell on the Fissures page. Watching ${s.fissure_watch.length}: <a href="#fissures">manage</a>.`)}
         ${toggle("notify_baro", "Baro Ki'Teer arrives", "")}
         ${toggle("notify_foundry", "Foundry builds finish", "Needs an inventory.")}
@@ -191,6 +192,12 @@ export default {
     };
     const test = $("#testOverlay");
     if (test) test.onclick = () => act("overlay/test");
+    const notification = $("#testNotification");
+    if (notification) notification.onclick = async () => {
+      notification.disabled = true;
+      try { await act("notifications/test", {}, "Sent to your desktop notification service"); }
+      finally { notification.disabled = false; }
+    };
     wireSources(view);
     wireAccounts($("#accounts"));
   },

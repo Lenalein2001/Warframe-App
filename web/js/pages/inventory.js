@@ -65,7 +65,8 @@ export default {
         <label class="check"><input type="checkbox" id="weapons" ${st.weapons ? "checked" : ""}>Weapons</label>
         <label class="check"><input type="checkbox" id="mastered" ${st.mastered ? "checked" : ""}>Mastered</label>
         <label>Crafting use <select id="crafting">${[["", "Any"], ["used", "Used in a recipe"], ["none", "No known crafting uses"], ["unknown", "Recipe data unavailable"]].map(([v, l]) => `<option value="${v}" ${st.crafting === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
-        <button id="review-weapons" class="ghost">Review mastered weapons without crafting uses</button>
+        <button id="review-weapons" class="ghost" title="Show mastered weapons with no known crafting uses">Review mastered weapons</button>
+        <button id="clear-filters" class="ghost">Clear filters</button>
       </div>
       <p class="muted">Crafting uses are based on loaded recipes. Mastery is account-wide; check upgrades, loadouts and individual copies before selling in-game.</p>
       <div class="kind-chips" id="kinds"><button class="chip ${st.kind ? "" : "on"}" data-kind="">All <span>${fmt(items.length)}</span></button>
@@ -82,13 +83,21 @@ export default {
         : st.sort === "value" ? (a, b) => value(b) - value(a) || (b.ducats || 0) - (a.ducats || 0)
           : (a, b) => a.name.localeCompare(b.name));
       $("#cnt").textContent = `${fmt(rows.length)} shown`;
+      $("#clear-filters").disabled = !(st.q || st.kind || st.tradable || st.weapons || st.mastered || st.crafting);
       $("#grid").innerHTML = rows.slice(0, st.limit).map(tile).join("")
-        || `<div class="empty" style="grid-column:1/-1"><b>Nothing matches</b>Try another word or kind.</div>`;
+        || `<div class="empty" style="grid-column:1/-1"><b>Nothing matches</b>Change the search or use Clear filters to show all items.</div>`;
       $("#more").innerHTML = rows.length > st.limit ? `<button id="moreBtn">Show ${fmt(Math.min(240, rows.length - st.limit))} more</button>` : "";
       const mb = $("#moreBtn");
       if (mb) mb.onclick = () => { st.limit += 240; draw(); };
     };
     draw();
+    $("#clear-filters").onclick = () => {
+      st.q = st.kind = st.crafting = ""; st.tradable = st.weapons = st.mastered = false; st.limit = 240;
+      $("#q").value = $("#crafting").value = "";
+      for (const key of ["trade", "weapons", "mastered"]) $("#" + key).checked = false;
+      for (const chip of view.querySelectorAll("#kinds .chip")) chip.classList.toggle("on", chip.dataset.kind === "");
+      draw();
+    };
     $("#q").oninput = debounce((e) => { st.q = e.target.value; st.limit = 240; draw(); }, 120);
     $("#trade").onchange = (e) => { st.tradable = e.target.checked; draw(); };
     for (const key of ["weapons", "mastered"]) $("#" + key).onchange = (e) => { st[key] = e.target.checked; st.limit = 240; draw(); };
