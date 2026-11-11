@@ -58,6 +58,7 @@ internal static class Program
         {
             // Startup diagnostics never contain payloads or account identifiers.
             Console.Error.WriteLine("Could not start Warframe Companion: " + e.GetType().Name + ". Check the runtime, port and data directory.");
+            if (Environment.GetEnvironmentVariable("WFC_STARTUP_DIAGNOSTICS") == "1") Console.Error.WriteLine(e);
             return 1;
         }
     }

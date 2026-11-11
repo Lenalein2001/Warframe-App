@@ -1,5 +1,6 @@
 """Run inside dbus-run-session and Xvfb with a real notification daemon."""
 import json
+import os
 import http.client
 import pathlib
 import socket
@@ -36,7 +37,8 @@ with tempfile.TemporaryDirectory(prefix='wfc-linux-') as temporary:
     log = root / 'desktop.log'
     with log.open('w') as output, (root / 'notifications.log').open('w') as notifications:
         daemon = subprocess.Popen(['dunst'], stdout=notifications, stderr=notifications)
-        app = subprocess.Popen([str(executable), '--offline', '--no-game', '--data-dir', str(root / 'data'), '--port', str(port)], stdout=output, stderr=output)
+        app = subprocess.Popen([str(executable), '--offline', '--no-game', '--data-dir', str(root / 'data'), '--port', str(port)], stdout=output, stderr=output,
+                               env={**os.environ, 'WFC_STARTUP_DIAGNOSTICS': '1'})
         try:
             wait_for(lambda: request('state').get('desktop'), 'GTK desktop startup')
             wait_for(lambda: 'Warframe App' in subprocess.check_output(['xwininfo', '-root', '-tree'], text=True), 'mapped GTK window')
