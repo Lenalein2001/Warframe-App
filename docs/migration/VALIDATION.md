@@ -9,6 +9,7 @@
 - Visual checks covered the inventory review and reset controls, Settings notification preview, and the corrected closed-game status. Filtering showed 23 mastered weapons with no known crafting uses; clearing restored 1,315 inventory rows.
 - Thirty warm local API samples per route measured median latency of 3.36 ms for state, 8.50 ms for inventory, 23.76 ms for mastery, 18.36 ms for primes and 33.29 ms for relics. These are observations on this machine, not a controlled comparison with the original app. Full raw drop tables are no longer retained after indexing; catalog metadata keeps only definitions and labels used at runtime.
 - GitHub's language API now reports C# as the largest language and no Rust entry.
+- An isolated offline catalog probe kept the loader alive, allowed loading continuations to unwind, then forced collection before measuring managed memory. With identical cache inputs, retained memory fell from 164,320,392 to 130,007,760 bytes (about 21%). Normalized items, parts, relics, crafts, inventory definitions, recipes, crafting uses and drop indexes had the same SHA-256 before and after. This measures the catalog probe, not total desktop/WebView process memory or frame rate.
 
 The Linux GUI/notification/overlay CI check is being exercised separately from compilation. No Linux machine with Warframe is available locally, so live Proton gameplay and Wayland compositor validation remain outstanding.
 

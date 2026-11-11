@@ -2,6 +2,7 @@ name: Windows packages
 on:
   push:
     branches: [senpai]
+    paths: ['src/**', 'web/**', 'tests/**', 'tools/**', 'packaging/**', 'licenses/**', '*.props', '*.slnx', 'LICENSE', 'docs/USAGE.md', '.github/workflows/windows.yml']
   release:
     types: [published]
   workflow_dispatch:
