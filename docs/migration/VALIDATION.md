@@ -1,4 +1,18 @@
-# Validation record — 2026-11-10
+# Validation record
+
+## 2026-11-11
+
+- The local suite passed 51/51 checks, including the supplied private relic screenshot, synthetic reward/riven OCR, Proton library discovery, desktop-specific screenshot selection, notification callback isolation and catalog compaction.
+- The 16:17 Windows build measured 27,657,941 bytes installed / 12,876,714 bytes zipped for the framework-dependent edition, and 137,964,277 / 62,956,667 for the self-contained edition. Both editions passed isolated first-start, restart, settings persistence and clean shutdown. The smaller ZIP is about 48% smaller than the preceding 24,843,555-byte package.
+- The OCR executable is built from pinned Tesseract 5.5.4 and Leptonica 1.87.0 sources, with a static runtime and no unused network/archive/external-codec dependencies. The original English LSTM model is unchanged. Internal PPM transport preserves pixels without PNG compression/decompression.
+- Windows package CI run `43046501213` passed package and installer install/start/upgrade/uninstall checks at `373bf8c`. The native Windows notification test was accepted by the OS API through Settings; this does not establish that banners are visible under every notification policy.
+- Visual checks covered the inventory review and reset controls, Settings notification preview, and the corrected closed-game status. Filtering showed 23 mastered weapons with no known crafting uses; clearing restored 1,315 inventory rows.
+- Thirty warm local API samples per route measured median latency of 3.36 ms for state, 8.50 ms for inventory, 23.76 ms for mastery, 18.36 ms for primes and 33.29 ms for relics. These are observations on this machine, not a controlled comparison with the original app. Full raw drop tables are no longer retained after indexing; catalog metadata keeps only definitions and labels used at runtime.
+- GitHub's language API now reports C# as the largest language and no Rust entry.
+
+The Linux GUI/notification/overlay CI check is being exercised separately from compilation. No Linux machine with Warframe is available locally, so live Proton gameplay and Wayland compositor validation remain outstanding.
+
+## Earlier validation — 2026-11-10
 
 The Windows C#/C/C++ replacement has been exercised with the original interface, migrated user data and a running game. Platform-specific limits are listed separately from passing tests.
 

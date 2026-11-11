@@ -10,7 +10,6 @@ public sealed class CatalogLoader(CachedJson cache)
     public static readonly string[] InventoryExports = ["ExportResources", "ExportUpgrades", "ExportArcanes", "ExportFlavour", "ExportGear", "ExportKeys", "ExportWeapons", "ExportWarframes", "ExportSentinels", "ExportDrones", "ExportAvionics", "ExportRailjackWeapons"];
     public static readonly string[] DropTables = ["relics", "missionRewards", "transientRewards", "cetusBountyRewards", "solarisBountyRewards", "deimosRewards", "zarimanRewards", "entratiLabRewards", "hexRewards", "sortieRewards", "blueprintLocations", "modLocations"];
     public List<string> Warnings { get; private set; } = [];
-    public Dictionary<string, JsonNode> DropData { get; private set; } = [];
     public async Task<Catalog> Load(bool force = false, CancellationToken cancellation = default)
     {
         var raw = new ConcurrentDictionary<string, JsonNode>(); var warnings = new ConcurrentBag<string>();
@@ -75,9 +74,28 @@ public sealed class CatalogLoader(CachedJson cache)
             cat.Inventory.TryAdd(uid, new(built?.Name is { } name ? name + " Blueprint" : null, "Blueprints", built?.Icon, recipe.Result, null, null, false));
         }
         cat.LoadedAt = J.Now; Warnings = warnings.Order().ToList();
-        DropData = DropTables.Where(n => raw.ContainsKey("drops_" + n)).ToDictionary(n => n, n => raw["drops_" + n]);
-        cat.Drops = DropIndex.Build(DropData.Where(p => p.Key != "relics").ToDictionary(p => p.Key, p => p.Value), 11);
+        var dropData = DropTables.Where(n => n != "relics" && raw.ContainsKey("drops_" + n)).ToDictionary(n => n, n => raw["drops_" + n]);
+        cat.Drops = DropIndex.Build(dropData, 11);
+        CompactMetadata(cat);
         return cat;
+    }
+    public static void CompactMetadata(Catalog catalog)
+    {
+        // Inventory names/ranks were already normalized above. Only randomized
+        // mod definitions are needed later, when reading explicit riven data.
+        catalog.UpgradeExport = new JsonObject(J.O(catalog.UpgradeExport)
+            .Where(p => p.Key.StartsWith("/Lotus/Upgrades/Mods/Randomized/", StringComparison.Ordinal))
+            .Select(p => KeyValuePair.Create(p.Key, p.Value?.DeepClone())));
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        void Collect(JsonNode? node)
+        {
+            if (node is JsonObject obj) foreach (var property in obj) Collect(property.Value);
+            else if (node is JsonArray array) foreach (var value in array) Collect(value);
+            else if (node is JsonValue value && value.TryGetValue<string>(out var text)) keys.Add(text);
+        }
+        Collect(catalog.Regions); Collect(catalog.SyndicateExport); Collect(catalog.UpgradeExport);
+        catalog.Dictionary = new JsonObject(J.O(catalog.Dictionary).Where(p => keys.Contains(p.Key))
+            .Select(p => KeyValuePair.Create(p.Key, p.Value?.DeepClone())));
     }
     public static string Clean(string name)
     {

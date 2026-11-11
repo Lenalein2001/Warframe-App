@@ -12,6 +12,19 @@ public static class IntegrationTests
     private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
     public static void Register(Action<string, Action> test)
     {
+        test("Catalog compaction retains region, standing and riven labels without unused exports", () =>
+        {
+            var catalog = new Catalog
+            {
+                Dictionary = JsonNode.Parse("""{"node":"Earth","faction":"Syndicate","rank":"Initiate","damage":"Damage","unused":"Discard"}"""),
+                Regions = JsonNode.Parse("""{"SolNode1":{"name":"node"}}"""),
+                SyndicateExport = JsonNode.Parse("""{"Faction":{"name":"faction","titles":[{"name":"rank"}]}}"""),
+                UpgradeExport = JsonNode.Parse("""{"/Lotus/Upgrades/Mods/Randomized/Rifle":{"upgradeEntries":[{"upgradeValues":[{"locTag":"damage"}]}]},"/RegularMod":{"name":"unused"}}""")
+            };
+            CatalogLoader.CompactMetadata(catalog);
+            Check(J.O(catalog.Dictionary).Count() == 4 && J.S(catalog.Dictionary?["damage"]) == "Damage" && J.S(catalog.Dictionary?["rank"]) == "Initiate", "Required labels were lost");
+            Check(J.O(catalog.UpgradeExport).Count() == 1 && catalog.UpgradeExport?["/RegularMod"] == null, "Unused mod definitions were retained");
+        });
         test("Automatic screenshots select tools for the active Linux desktop", () =>
         {
             Check(!ScreenCapture.ScreenshotCandidates("auto", false, "", false).Contains("grim"), "X11 selected a Wayland-only capture tool");
