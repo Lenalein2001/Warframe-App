@@ -22,6 +22,7 @@ public sealed class GameLog
     private bool rewardOpen;
     private (string Path, DateTime Modified, long Length)? configStamp;
     public event Action<LogSignal>? Signal;
+    public event Action? Reset;
     public static string StripGlyphs(string text) => new(text.Where(c => c is < '\ue000' or > '\uf8ff').ToArray());
     public static string? PlayerName(string? text) => text == null ? null : StripGlyphs(text).Trim();
     public static IEnumerable<LogSignal> Candidates(string line, string? player)
@@ -63,25 +64,38 @@ public sealed class GameLog
     public void Poll(string? configured)
     {
         var path = string.IsNullOrWhiteSpace(configured) ? Discover() : configured;
-        Active = false; if (path == null || !File.Exists(path)) return;
+        Active = false;
+        if (path == null || !File.Exists(path))
+        {
+            if (Path != null) { Path = null; Player = null; AccountId = null; Scale = null; configStamp = null; Reset?.Invoke(); }
+            return;
+        }
         var info = new FileInfo(path); var fileIdentity = NativeEngine.FileIdentity(path);
         var first = path != Path || info.Length < offset || fileIdentity != identity;
-        if (first) { Path = path; identity = fileIdentity; offset = Math.Max(0, info.Length - 64 * 1024 * 1024); historicalUntil = info.Length; pending = ""; Player = null; AccountId = null; logStarted = null; decoder.Reset(); skipPartialLine = offset > 0; rewardOpen = false; }
+        if (first) { Path = path; identity = fileIdentity; offset = Math.Max(0, info.Length - 64 * 1024 * 1024); historicalUntil = info.Length; pending = ""; Player = null; AccountId = null; logStarted = null; decoder.Reset(); skipPartialLine = offset > 0; rewardOpen = false; Reset?.Invoke(); }
         var historical = offset < historicalUntil;
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete); stream.Seek(offset, SeekOrigin.Begin);
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        if (stream.Length < offset) { Path = null; Player = null; AccountId = null; Reset?.Invoke(); return; }
+        stream.Seek(offset, SeekOrigin.Begin);
         // Do not mix historical and newly appended events in one batch.
         var available = (historical ? Math.Min(historicalUntil, stream.Length) : stream.Length) - offset;
-        var bytes = new byte[(int)Math.Min(8 * 1024 * 1024, available)]; var count = stream.Read(bytes); offset += count;
+        var bytes = new byte[(int)Math.Max(0, Math.Min(8 * 1024 * 1024, available))]; var count = stream.Read(bytes); offset += count;
         var chars = new char[Encoding.UTF8.GetMaxCharCount(count)];
         var decoded = decoder.GetChars(bytes, 0, count, chars, 0, false);
-        var lines = (pending + new string(chars, 0, decoded)).Split('\n'); pending = lines[^1].Length <= 65536 ? lines[^1] : "";
+        var lines = (pending + new string(chars, 0, decoded)).Split('\n'); pending = "";
         foreach (var line in lines.SkipLast(1))
         {
             if (skipPartialLine) { skipPartialLine = false; continue; }
+            if (line.Length > 65536) continue;
             var header = Regex.Match(line, @"\[UTC:\s*(.*?)\]");
             if (header.Success && DateTimeOffset.TryParseExact(Regex.Replace(header.Groups[1].Value, @"\s+", " "), ["ddd MMM d HH:mm:ss yyyy", "ddd MMM dd HH:mm:ss yyyy"], CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var began)) logStarted = began;
             var prefix = Regex.Match(line, @"^\s*(\d+(?:\.\d+)?)");
-            double? time = logStarted != null && prefix.Success && double.TryParse(prefix.Value, CultureInfo.InvariantCulture, out var elapsed) ? logStarted.Value.ToUnixTimeMilliseconds() / 1000.0 + elapsed : historical ? null : J.Now;
+            double? time = historical ? null : J.Now;
+            if (logStarted != null && prefix.Success && double.TryParse(prefix.Value, CultureInfo.InvariantCulture, out var elapsed))
+            {
+                var candidateTime = logStarted.Value.ToUnixTimeMilliseconds() / 1000.0 + elapsed;
+                if (double.IsFinite(candidateTime) && candidateTime >= 0 && candidateTime <= DateTimeOffset.MaxValue.ToUnixTimeSeconds()) time = candidateTime;
+            }
             foreach (var signal in Parse(line.TrimEnd('\r')))
             {
                 if (!historical && signal.Kind == "rewards") { if (rewardOpen && !line.Contains("OpenVoidProjectionRewardScreen", StringComparison.Ordinal)) continue; rewardOpen = true; }
@@ -93,6 +107,8 @@ public sealed class GameLog
             }
             foreach (var candidate in Candidates(line, Player)) Signal?.Invoke(candidate with { Time = time });
         }
+        if (lines[^1].Length > 65536) skipPartialLine = true;
+        if (!skipPartialLine) pending = lines[^1];
         Active = true;
         var cfg = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(path)!, "EE.cfg");
         var configInfo = new FileInfo(cfg);

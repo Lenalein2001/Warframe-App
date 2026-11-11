@@ -117,12 +117,12 @@ public sealed partial class CompanionRuntime
                     {
                         account.Evidence.Add(new(signal.Id, signal.Value ?? "Game log account candidate."));
                         if (account.Evidence.Count > 12) account.Evidence.RemoveRange(0, account.Evidence.Count - 12);
+                        SaveRegistry(registry);
                     }
-                    SaveRegistry(registry);
                 }
             }
             else if (signal.Kind == "badge" && playingKey != null)
-            { var account = registry.Accounts.FirstOrDefault(a => a.Key == playingKey); if (account != null) { account.Badge = signal.Rank; account.BadgeMax = signal.RankMax; SaveRegistry(registry); } }
+            { var account = registry.Accounts.FirstOrDefault(a => a.Key == playingKey); if (account != null && (account.Badge != signal.Rank || account.BadgeMax != signal.RankMax)) { account.Badge = signal.Rank; account.BadgeMax = signal.RankMax; SaveRegistry(registry); } }
             else if (signal.Kind == "sync") memoryRequested = true;
             else if (signal.Kind == "duviri-start") duviri.Clear();
             else if (signal.Kind == "duviri-item") duviri.Add(J.Node(new { uid = signal.Value, owned = signal.Id == "owned", category = signal.Rank }));
@@ -132,10 +132,18 @@ public sealed partial class CompanionRuntime
         if (signal.Kind == "rewards") RewardScreenOpened?.Invoke();
         if (signal.Kind == "rewards-closed") RewardScreenClosed?.Invoke();
     }
+    private void ResetLogSession()
+    {
+        lock (sync) {
+            playingKey = null; gameSession++; memoryCancellation?.Cancel(); memoryRequested = false;
+            lastSuccessfulScan = null; ScanError = null; duviri.Clear();
+            Interlocked.Increment(ref rewardGeneration);
+        }
+    }
     internal Func<int?> FindGameProcess { get; set; } = MemoryProvider.GamePid;
     private async Task GameLoop()
     {
-        Log.Signal += LogSignal;
+        Log.Signal += LogSignal; Log.Reset += ResetLogSession;
         while (!stop.IsCancellationRequested)
         {
             try
@@ -190,7 +198,7 @@ public sealed partial class CompanionRuntime
             { Event("Game integration: " + (e is InventoryException ? e.Message : e.GetType().Name), "error"); }
             try { await Task.Delay(TimeSpan.FromSeconds(2), stop.Token); } catch (OperationCanceledException) { break; }
         }
-        Log.Signal -= LogSignal;
+        Log.Signal -= LogSignal; Log.Reset -= ResetLogSession;
     }
     internal async Task<bool> ImportWatchedInventory(Stream input, CancellationToken cancellation)
     {

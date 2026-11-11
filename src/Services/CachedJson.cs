@@ -9,9 +9,18 @@ namespace WarframeCompanion.Services;
 
 public sealed record CachedDocument(JsonNode Data, bool Stale, string? Warning);
 
-public sealed class CachedJson(string directory, bool offline = false) : IDisposable
+public sealed class CachedJson : IDisposable
 {
-    private readonly HttpClient client = new(new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All }) { Timeout = TimeSpan.FromSeconds(30) };
+    private readonly string directory;
+    private readonly bool offline;
+    private readonly HttpClient client;
+    private readonly TimeSpan requestTimeout;
+    public CachedJson(string directory, bool offline = false) : this(directory, offline, null, TimeSpan.FromSeconds(30)) { }
+    internal CachedJson(string directory, bool offline, HttpMessageHandler? handler, TimeSpan timeout)
+    {
+        this.directory = directory; this.offline = offline; requestTimeout = timeout;
+        client = new(handler ?? new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All }) { Timeout = timeout };
+    }
     private readonly SemaphoreSlim slots = new(4);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> keys = new();
     public async Task<byte[]> Blob(string url, TimeSpan maxAge, bool force = false, CancellationToken cancellation = default)
@@ -25,12 +34,13 @@ public sealed class CachedJson(string directory, bool offline = false) : IDispos
             if (offline) throw new IOException("No offline copy is available."); await slots.WaitAsync(cancellation);
             try
             {
-                using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellation); response.EnsureSuccessStatusCode();
-                await using var input = await response.Content.ReadAsStreamAsync(cancellation); using var output = new MemoryStream(); var buffer = new byte[65536]; int count;
-                while ((count = await input.ReadAsync(buffer, cancellation)) > 0) { if (output.Length + count > 32 * 1024 * 1024) throw new IOException("Download exceeds limit."); output.Write(buffer, 0, count); }
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation); deadline.CancelAfter(requestTimeout);
+                using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, deadline.Token); response.EnsureSuccessStatusCode();
+                await using var input = await response.Content.ReadAsStreamAsync(deadline.Token); using var output = new MemoryStream(); var buffer = new byte[65536]; int count;
+                while ((count = await input.ReadAsync(buffer, deadline.Token)) > 0) { if (output.Length + count > 32 * 1024 * 1024) throw new IOException("Download exceeds limit."); output.Write(buffer, 0, count); }
                 var bytes = output.ToArray(); if (bytes.Length == 0) throw new IOException("Empty download."); AtomicWrite(path, bytes); return bytes;
             }
-            catch (Exception e) when (old != null && !cancellation.IsCancellationRequested && e is HttpRequestException or IOException or TaskCanceledException) { return old; }
+            catch (Exception e) when (old != null && !cancellation.IsCancellationRequested && e is HttpRequestException or IOException or OperationCanceledException) { return old; }
             finally { slots.Release(); }
         }
         finally { gate.Release(); }
@@ -55,27 +65,35 @@ public sealed class CachedJson(string directory, bool offline = false) : IDispos
             await slots.WaitAsync(cancellation);
             try
             {
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation); deadline.CancelAfter(requestTimeout);
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
                 request.Headers.UserAgent.ParseAdd("WarframeCompanion/0.1 (+https://github.com/Lenalein2001/Warframe-App)");
-                if (cached != null && File.Exists(path + ".etag")) request.Headers.TryAddWithoutValidation("If-None-Match", await File.ReadAllTextAsync(path + ".etag", cancellation));
-                using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellation);
+                if (cached != null && File.Exists(path + ".etag"))
+                {
+                    using var reader = new StreamReader(path + ".etag");
+                    var value = new char[8193]; var length = await reader.ReadBlockAsync(value.AsMemory(), deadline.Token);
+                    if (length <= 8192 && System.Net.Http.Headers.EntityTagHeaderValue.TryParse(new string(value, 0, length), out var validator))
+                        request.Headers.IfNoneMatch.Add(validator);
+                }
+                using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
                 if (response.StatusCode == HttpStatusCode.NotModified && cached != null) { File.SetLastWriteTimeUtc(path, DateTime.UtcNow); return new(cached, false, null); }
                 response.EnsureSuccessStatusCode();
-                await using var stream = await response.Content.ReadAsStreamAsync(cancellation);
+                await using var stream = await response.Content.ReadAsStreamAsync(deadline.Token);
                 using var data = new MemoryStream(); var buffer = new byte[65536]; int count;
-                while ((count = await stream.ReadAsync(buffer, cancellation)) > 0)
+                while ((count = await stream.ReadAsync(buffer, deadline.Token)) > 0)
                 {
                     if (data.Length + count > 64 * 1024 * 1024) throw new IOException("Data source exceeds the 64 MiB limit.");
                     data.Write(buffer, 0, count);
                 }
-                var parsed = JsonNode.Parse(data.ToArray()) ?? throw new JsonException("Empty response");
+                var bytes = data.ToArray();
+                var parsed = JsonNode.Parse(bytes) ?? throw new JsonException("Empty response");
                 if (parsed is not (JsonArray or JsonObject)) throw new JsonException("Expected a document");
-                AtomicWrite(path, data.ToArray());
+                AtomicWrite(path, bytes);
                 if (response.Headers.ETag is { } etag) AtomicWrite(path + ".etag", Encoding.UTF8.GetBytes(etag.ToString()));
                 else if (File.Exists(path + ".etag")) File.Delete(path + ".etag");
                 return new(parsed, false, null);
             }
-            catch (Exception e) when (cached != null && !cancellation.IsCancellationRequested && e is HttpRequestException or IOException or JsonException or TaskCanceledException)
+            catch (Exception e) when (cached != null && !cancellation.IsCancellationRequested && e is HttpRequestException or IOException or JsonException or OperationCanceledException)
             { return new(cached, true, "Refresh failed: using the last valid cached data."); }
             finally { slots.Release(); }
         }

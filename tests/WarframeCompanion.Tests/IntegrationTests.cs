@@ -113,6 +113,61 @@ public static class IntegrationTests
             Check(updated.Text.StartsWith("-- User configuration", StringComparison.Ordinal) && updated.Text.EndsWith("-- User footer\n", StringComparison.Ordinal) && !updated.Text.Contains("hl.bind"), "Disabling keys changed user configuration");
             try { CompositorBindings.MergeLua("-- >>> warframeproject hotkeys (managed)", []); throw new Exception("Broken managed block accepted"); } catch (InventoryException) { }
         });
+        test("Oversized log continuations cannot become login events and timestamps stay finite", () => InDirectory(directory =>
+        {
+            var path = Path.Combine(directory, "EE.log");
+            File.WriteAllText(path, new string('x', 70000));
+            var log = new GameLog(); var signals = new List<LogSignal>(); log.Signal += signals.Add;
+            log.Poll(path);
+            File.AppendAllText(path, "Sys [Info]: Logged in Spoof\n[UTC: Wed Nov 11 00:00:00 2026]\n" + new string('9', 400) + " Sys [Info]: Logged in Genuine\n");
+            log.Poll(path);
+            Check(signals.Count(s => s.Kind == "login") == 1 && log.Player == "Genuine", "Oversized continuation was interpreted as a separate login");
+            Check(signals.All(s => s.Time == null || double.IsFinite(s.Time.Value)), "Invalid timestamp escaped into account state");
+            File.AppendAllText(path, new string('x', 70000) + " Sys [Info]: Logged in AnotherSpoof\n");
+            log.Poll(path); Check(log.Player == "Genuine", "Oversized complete line was parsed");
+        }));
+        test("Rotated logs cannot update the previous account before a new login", () => InDirectory(directory =>
+        {
+            var path = Path.Combine(directory, "EE.log");
+            File.WriteAllText(path, "Sys [Info]: Logged in First\nOnMasteryIconReady1(Loaded:/Rank14_icon)\n");
+            var store = new StateStore(Path.Combine(directory, "state.sqlite"));
+            var settings = Settings.Defaults(); settings["ee_log_path"] = path; settings["ocr_enabled"] = false; store.Write("settings", settings);
+            var runtime = new CompanionRuntime(directory, true) { FindGameProcess = () => 123 };
+            try {
+                runtime.StartGameWatcher();
+                Check(J.B(runtime.Summary()["account"]?["playing"]), "Initial login was not detected");
+                File.Move(path, path + ".old"); File.WriteAllText(path, "OnMasteryIconReady1(Loaded:/Rank29_icon)\n");
+                Check(SpinWait.SpinUntil(() => !J.B(runtime.Summary()["account"]?["playing"]), TimeSpan.FromSeconds(8)), "Rotated log retained old account association");
+                Check(store.Read<RegistryState>("registry")!.Accounts.Single().Badge == 14, "Orphan rank updated the previous account");
+                File.AppendAllText(path, "Sys [Info]: Logged in Second\nOnMasteryIconReady1(Loaded:/Rank5_icon)\n");
+                Check(SpinWait.SpinUntil(() => store.Read<RegistryState>("registry")!.Accounts.Any(a => a.Name == "Second" && a.Badge == 5), TimeSpan.FromSeconds(8)), "New login did not reconnect monitoring");
+            } finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
+        test("Malformed cached validators are not forwarded as HTTP headers", () => InDirectory(directory =>
+        {
+            const string url = "https://fixture.invalid/catalog";
+            var path = Path.Combine(directory, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(url))) + ".json");
+            foreach (var invalid in new[] { "\"tag\"\r\nInjected: value", new string('x', 9000) })
+            {
+                File.WriteAllText(path, "{}"); File.WriteAllText(path + ".etag", invalid);
+                var handler = new ValidatorHandler(); using var cache = new CachedJson(directory, false, handler, TimeSpan.FromSeconds(2));
+                var result = cache.Get(url, TimeSpan.Zero, force: true).GetAwaiter().GetResult();
+                Check(!handler.Forwarded && !result.Stale, "Malformed validator was forwarded or prevented refresh");
+            }
+        }));
+        test("Stalled response bodies time out and retain valid cached data", () => InDirectory(directory =>
+        {
+            const string url = "https://fixture.invalid/catalog";
+            var path = Path.Combine(directory, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(url))) + ".json");
+            File.WriteAllText(path, "{\"cached\":true}");
+            var handler = new StalledBodyHandler();
+            using var cache = new CachedJson(directory, false, handler, TimeSpan.FromSeconds(2));
+            var result = cache.Get(url, TimeSpan.Zero, force: true).GetAwaiter().GetResult();
+            Check(handler.BodyStarted && result.Stale && J.B(result.Data["cached"]), "Stalled body did not fall back to cache");
+            Check(File.ReadAllText(path) == "{\"cached\":true}", "Timeout changed the cache");
+            try { cache.Blob(url + "/blob", TimeSpan.Zero).GetAwaiter().GetResult(); throw new Exception("Stalled binary body completed"); } catch (OperationCanceledException) { }
+            Check(!Directory.EnumerateFiles(directory, "*.bin").Any(), "Partial binary download was persisted");
+        }));
         test("Profile Retry-After survives restart without another service request", () => InDirectory(directory =>
         {
             new StateStore(Path.Combine(directory, "state.sqlite")).Write("registry", new RegistryState { Active = "fixture", Accounts = [new() { Key = "fixture", Id = "0123456789abcdef01234567" }] });
@@ -518,6 +573,27 @@ public static class IntegrationTests
             history.ImportLegacy(historyPath); Check(history.Entries.Count == 1, "History imported twice");
         }));
         test("Loopback HTTP serves preserved UI and enforces validation and persistence", () => InDirectory(directory => HttpTest(directory).GetAwaiter().GetResult()));
+    }
+    private sealed class ValidatorHandler : HttpMessageHandler
+    {
+        public bool Forwarded;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Forwarded = request.Headers.Contains("If-None-Match");
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
+        }
+    }
+    private sealed class StalledBodyHandler : HttpMessageHandler
+    {
+        public bool BodyStarted;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new StalledBodyStream(() => BodyStarted = true)) });
+    }
+    private sealed class StalledBodyStream(Action started) : MemoryStream
+    {
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        { started(); await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken); return 0; }
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
     }
     private sealed class RefusedProfileHandler : HttpMessageHandler
     {
