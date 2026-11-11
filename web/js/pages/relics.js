@@ -64,6 +64,6 @@ export default {
     seg("sort", "sort");
     $("#own").onchange = (e) => { st.owned = e.target.checked; app.refresh(); };
     $("#unv").onchange = (e) => { st.unvaulted = e.target.checked; draw(); };
-    $("#list").onclick = (e) => { const c = e.target.closest("[data-relic]"); if (c) drawer.open(c.dataset.relic); };
+    $("#list").onclick = (e) => { const c = e.target.closest("[data-relic]"); if (c) drawer.openRelic(c.dataset.relic); };
   },
 };

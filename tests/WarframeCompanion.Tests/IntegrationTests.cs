@@ -113,6 +113,61 @@ public static class IntegrationTests
             Check(updated.Text.StartsWith("-- User configuration", StringComparison.Ordinal) && updated.Text.EndsWith("-- User footer\n", StringComparison.Ordinal) && !updated.Text.Contains("hl.bind"), "Disabling keys changed user configuration");
             try { CompositorBindings.MergeLua("-- >>> warframeproject hotkeys (managed)", []); throw new Exception("Broken managed block accepted"); } catch (InventoryException) { }
         });
+        test("Public profile timeout does not stop game log monitoring", () => InDirectory(directory =>
+        {
+            var path = Path.Combine(directory, "EE.log"); File.WriteAllText(path, "Sys [Info]: Logged in Fixture\n");
+            var store = new StateStore(Path.Combine(directory, "state.sqlite"));
+            store.Write("registry", new RegistryState { Active = "fixture", Accounts = [new() { Key = "fixture", Name = "Fixture", Id = "0123456789abcdef01234567" }] });
+            var settings = Settings.Defaults(); settings["ee_log_path"] = path; settings["profile_auto_refresh"] = true;
+            settings["memory_scan_enabled"] = false; settings["ocr_enabled"] = false; store.Write("settings", settings);
+            var handler = new TimeoutProfileHandler(); var runtime = new CompanionRuntime(directory, false, false, handler);
+            try
+            {
+                runtime.StartGameWatcher();
+                Check(handler.Called, "Profile request was not attempted");
+                File.AppendAllText(path, "OnMasteryIconReady1(Loaded:/Rank18_icon)\n");
+                Check(SpinWait.SpinUntil(() => store.Read<RegistryState>("registry")!.Accounts.Single().Badge == 18, TimeSpan.FromSeconds(8)), "Profile timeout stopped later log events");
+            }
+            finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
+        test("Log identity resolution rejects incidental IDs and resolves delayed known IDs", () =>
+        {
+            const string firstId = "0123456789abcdef01234567", secondId = "abcdef0123456789abcdef01";
+            foreach (var scenario in new[] { "incidental", "delayed", "conflict", "ambiguous" }) InDirectory(directory =>
+            {
+                var logPath = Path.Combine(directory, "EE.log");
+                var login = scenario is "incidental" or "delayed" ? "Renamed" : "Known";
+                var suffix = scenario == "incidental" ? $"Renamed {secondId}\n" : scenario == "delayed" ? $"AccountId: {firstId}\n" : scenario == "conflict" ? $"AccountId: {secondId}\n" : "";
+                File.WriteAllText(logPath, $"Sys [Info]: Logged in {login}\n" + suffix + "OnMasteryIconReady1(Loaded:/Rank17_icon)\n");
+                var store = new StateStore(Path.Combine(directory, "state.sqlite"));
+                store.Write("registry", new RegistryState { Active = "first", Accounts = [
+                    new() { Key = "first", Id = firstId, Name = "Known", Manual = new() { Pinned = ["/Keep"] } },
+                    new() { Key = "second", Id = secondId, Name = scenario == "ambiguous" ? "Known" : "Other" }
+                ] });
+                var settings = Settings.Defaults(); settings["ee_log_path"] = logPath; settings["ocr_enabled"] = false; store.Write("settings", settings);
+                var runtime = new CompanionRuntime(directory, true);
+                try
+                {
+                    runtime.Start(); var saved = store.Read<RegistryState>("registry")!;
+                    var active = saved.Accounts.Single(a => a.Badge == 17);
+                    if (scenario is "incidental" or "ambiguous") Check(active.Id == null, "Unproven identity was assigned in " + scenario);
+                    else Check(active.Id == firstId, "Known identity was lost in " + scenario);
+                    if (scenario == "delayed") Check(saved.Accounts.Count == 2 && active.Name == "Renamed", "Delayed identity left an empty duplicate or stale player name");
+                    Check(saved.Accounts.Single(a => a.Key == "first").Manual.Pinned.Single() == "/Keep", "Identity resolution lost manual state");
+                }
+                finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+            });
+        });
+        test("Log scale cache refreshes changed and removed settings", () => InDirectory(directory =>
+        {
+            var path = Path.Combine(directory, "EE.log"); var cfg = Path.Combine(directory, "EE.cfg");
+            File.WriteAllText(path, "Sys [Info]: Logged in Fixture\n"); File.WriteAllText(cfg, "Flash.FlashDrawScale=0.9");
+            var log = new GameLog(); log.Poll(path); Check(log.Scale == .9, "Initial scale missing");
+            using (var held = new FileStream(cfg, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                log.Poll(path); // An unchanged file must not be reopened each poll.
+            File.WriteAllText(cfg, "Flash.FlashDrawScale=1.25"); log.Poll(path); Check(log.Scale == 1.25, "Changed scale was cached forever");
+            File.Delete(cfg); log.Poll(path); Check(log.Scale == null, "Removed configuration left a stale scale");
+        }));
         test("Platform glyphs repair empty duplicate accounts without losing linked inventory", () => InDirectory(directory =>
         {
             const string id = "0123456789abcdef01234567";
@@ -146,7 +201,7 @@ public static class IntegrationTests
         test("Historical login preserves selected account and inferred identity retains inventory", () => InDirectory(directory =>
         {
             var logPath = Path.Combine(directory, "EE.log");
-            File.WriteAllText(logPath, "Sys [Info]: Logged in FixturePlayer\nFixturePlayer 0123456789abcdef01234567\n");
+            File.WriteAllText(logPath, "Sys [Info]: Logged in FixturePlayer\nVoidProjections: Sending reward info from 0123456789abcdef01234567 to host!\n");
             var store = new StateStore(Path.Combine(directory, "state.sqlite"));
             store.Write("registry", new RegistryState { Active = "view", Switched = J.Now, Accounts = [new() { Key = "view", Name = "Viewed" }, new() { Key = "game", Name = "FixturePlayer" }] });
             var settings = Settings.Defaults(); settings["ee_log_path"] = logPath; settings["ocr_enabled"] = false; store.Write("settings", settings);
@@ -269,6 +324,12 @@ public static class IntegrationTests
             history.ImportLegacy(historyPath); Check(history.Entries.Count == 1, "History imported twice");
         }));
         test("Loopback HTTP serves preserved UI and enforces validation and persistence", () => InDirectory(directory => HttpTest(directory).GetAwaiter().GetResult()));
+    }
+    private sealed class TimeoutProfileHandler : HttpMessageHandler
+    {
+        public bool Called { get; private set; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        { Called = true; return Task.FromException<HttpResponseMessage>(new TaskCanceledException("Synthetic profile timeout")); }
     }
     public static void RegisterOcr(Action<string, Action> test)
     {

@@ -22,7 +22,7 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
     private readonly CatalogLoader loader;
     private readonly CancellationTokenSource stop = new();
     private readonly SemaphoreSlim reload = new(1);
-    private readonly HttpClient profileClient = new() { Timeout = TimeSpan.FromSeconds(20) };
+    private readonly HttpClient profileClient;
     private readonly SemaphoreSlim profileGate = new(1);
     private DateTimeOffset nextProfile;
     private RegistryState registry;
@@ -48,7 +48,11 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
     public event Action? ShowRequested;
     public event Action? QuitRequested;
     public CompanionRuntime(string directory, bool offline, bool migrateLegacy = false)
+        : this(directory, offline, migrateLegacy, null) { }
+    internal CompanionRuntime(string directory, bool offline, bool migrateLegacy, HttpMessageHandler? profileHandler)
     {
+        profileClient = profileHandler == null ? new() : new(profileHandler);
+        profileClient.Timeout = TimeSpan.FromSeconds(20);
         DataDirectory = Path.GetFullPath(directory); Offline = offline;
         Directory.CreateDirectory(DataDirectory);
         store = new(Path.Combine(DataDirectory, "state.sqlite")); snapshots = new(Path.Combine(DataDirectory, "companion.sqlite"));
@@ -70,7 +74,8 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
         Rivens.SetPlatform(J.S(settings, "platform") ?? "pc");
     }
     public JsonObject GetSettings() { lock (sync) return (JsonObject)settings.DeepClone(); }
-    public void Start(bool watchGame = true) { RewardScreenOpened += StartAutomaticOcr; RewardScreenClosed += CloseRewards; background ??= Background(); if (watchGame) gameLoop ??= GameLoop(); }
+    public void Start(bool watchGame = true) { RewardScreenOpened += StartAutomaticOcr; RewardScreenClosed += CloseRewards; background ??= Background(); if (watchGame) StartGameWatcher(); }
+    internal void StartGameWatcher() => gameLoop ??= GameLoop();
     private async Task Background()
     {
         var catalog = Task.WhenAll(Reload(stop.Token), Updates.Check(stop.Token));

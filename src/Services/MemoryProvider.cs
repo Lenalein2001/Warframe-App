@@ -14,9 +14,13 @@ public static class MemoryProvider
         || InventoryParser.EquipmentKeys.Contains(name) || name is "XPInfo" or "Upgrades" or "PendingRecipes";
     public static int? GamePid()
     {
-        foreach (var process in Process.GetProcesses())
+        int? found = null;
+        var names = OperatingSystem.IsLinux() ? new[] { "Warframe.x64", "Warframe.x64.exe", "Warframe.x64.ex" } : ["Warframe.x64"];
+        foreach (var name in names)
         {
-            using (process) try { if (process.ProcessName.Equals("Warframe.x64", StringComparison.OrdinalIgnoreCase) || process.ProcessName.Equals("Warframe.x64.exe", StringComparison.OrdinalIgnoreCase) || OperatingSystem.IsLinux() && process.ProcessName.Equals("Warframe.x64.ex", StringComparison.OrdinalIgnoreCase)) return process.Id; } catch (InvalidOperationException) { }
+            foreach (var process in Process.GetProcessesByName(name))
+                using (process) try { found ??= process.Id; } catch (InvalidOperationException) { }
+            if (found != null) return found;
         }
         return null;
     }

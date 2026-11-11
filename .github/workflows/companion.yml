@@ -22,6 +22,7 @@ jobs:
         with:
           python-version: '3.x'
       - run: python tools/migration-contracts.py --check
+      - run: node tests/clipboard.test.mjs
       - if: runner.os == 'Windows'
         shell: pwsh
         run: ./tools/build-native.ps1

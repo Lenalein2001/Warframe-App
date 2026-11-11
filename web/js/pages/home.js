@@ -175,7 +175,7 @@ function pinned(S) {
 }
 
 function wire(view) {
-  for (const el of view.querySelectorAll("[data-relic]")) el.onclick = () => el.dataset.relic && drawer.open(el.dataset.relic);
+  for (const el of view.querySelectorAll("[data-relic]")) el.onclick = () => el.dataset.relic && drawer.openRelic(el.dataset.relic);
   for (const el of view.querySelectorAll("[data-part]")) el.onclick = () => drawer.open(el.dataset.part);
   for (const el of view.querySelectorAll("[data-syn]")) el.onclick = () => drawer.open("syndicate:" + el.dataset.syn);
   const back = view.querySelector("[data-show-game]");

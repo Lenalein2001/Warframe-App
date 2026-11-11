@@ -18,6 +18,7 @@ public sealed partial class CompanionRuntime
     private double nextAutoProfile;
     private bool memoryRequested;
     private string? playingKey;
+    private long gameSession;
     private (string? Path, DateTime Time, long Length) watchedInventory;
     private readonly List<JsonNode> duviri = [];
     private void RepairAccountNames()
@@ -58,14 +59,41 @@ public sealed partial class CompanionRuntime
         account.Id = id;
         account.Source = "EE.log";
     }
+    private void ResolveLogIdentity(string id)
+    {
+        var pending = registry.Accounts.FirstOrDefault(a => a.Key == playingKey);
+        if (pending == null || pending.Id != null) return;
+        var known = registry.Accounts.FirstOrDefault(a => a.Id == id);
+        if (known != null && known.Key != pending.Key)
+        {
+            // An explicit ID outranks a provisional name match. Retain both profiles'
+            // saved data, and follow the game only if the provisional profile was shown.
+            if (registry.Active == pending.Key) registry.Active = known.Key;
+            playingKey = known.Key;
+            known.Name = GameLog.PlayerName(pending.Name) ?? known.Name;
+            RepairAccountNames();
+            gameSession++;
+            Interlocked.Increment(ref rewardGeneration);
+            lastSuccessfulScan = null; ScanError = null; memoryRequested = true;
+            SaveRegistry(registry);
+        }
+        else
+        {
+            LinkLogAccount(pending, id); gameSession++; memoryRequested = true; SaveRegistry(registry);
+        }
+    }
     private void LogSignal(LogSignal signal)
     {
         lock (sync)
         {
             if (signal.Kind == "login")
             {
+                gameSession++;
                 var next = JsonSerializer.Deserialize<RegistryState>(JsonSerializer.Serialize(registry, J.Options), J.Options)!;
-                var account = next.Accounts.FirstOrDefault(a => signal.Id != null && a.Id == signal.Id) ?? next.Accounts.FirstOrDefault(a => string.Equals(GameLog.PlayerName(a.Name), GameLog.PlayerName(signal.Value), StringComparison.OrdinalIgnoreCase) && (signal.Id == null || a.Id == null || a.Id == signal.Id));
+                var matches = next.Accounts.Where(a => string.Equals(GameLog.PlayerName(a.Name), GameLog.PlayerName(signal.Value), StringComparison.OrdinalIgnoreCase) && (signal.Id == null || a.Id == null || a.Id == signal.Id)).ToArray();
+                var provisional = matches.Where(a => a.Id == null).ToArray();
+                var account = next.Accounts.FirstOrDefault(a => signal.Id != null && a.Id == signal.Id)
+                    ?? (matches.Length == 1 ? matches[0] : provisional.Length == 1 ? provisional[0] : null);
                 if (account == null) { account = new() { Key = "account-" + Guid.NewGuid().ToString("N"), Name = signal.Value, Id = signal.Id, Source = "EE.log" }; next.Accounts.Add(account); }
                 account.Seen = signal.Time ?? account.Seen; if (signal.Id != null) LinkLogAccount(account, signal.Id);
                 if (playingKey != account.Key) { Interlocked.Increment(ref rewardGeneration); lastSuccessfulScan = null; ScanError = null; }
@@ -75,16 +103,15 @@ public sealed partial class CompanionRuntime
             }
             else if (signal.Kind == "identity" && playingKey != null)
             {
-                var account = registry.Accounts.FirstOrDefault(a => a.Key == playingKey);
-                if (account?.Id == null && account != null && signal.Id != null && !registry.Accounts.Any(a => a.Id == signal.Id)) { LinkLogAccount(account, signal.Id); SaveRegistry(registry); }
+                if (signal.Id != null) ResolveLogIdentity(signal.Id);
             }
             else if (signal.Kind == "candidate" && playingKey != null && signal.Id != null)
             {
                 var account = registry.Accounts.FirstOrDefault(a => a.Key == playingKey);
-                if (account != null && !registry.Accounts.Any(a => a.Id == signal.Id))
+                if (signal.Sure) ResolveLogIdentity(signal.Id);
+                else if (account != null && !registry.Accounts.Any(a => a.Id == signal.Id))
                 {
-                    if (signal.Sure && account.Id == null) LinkLogAccount(account, signal.Id);
-                    else if (account.Evidence.All(e => e.Id != signal.Id))
+                    if (account.Evidence.All(e => e.Id != signal.Id))
                     {
                         account.Evidence.Add(new(signal.Id, signal.Value ?? "Game log account candidate."));
                         if (account.Evidence.Count > 12) account.Evidence.RemoveRange(0, account.Evidence.Count - 12);
@@ -110,7 +137,16 @@ public sealed partial class CompanionRuntime
         {
             try
             {
-                var config = GetSettings(); GameProcess = MemoryProvider.GamePid(); Log.Poll(J.S(config, "ee_log_path"));
+                var config = GetSettings(); var detected = MemoryProvider.GamePid();
+                lock (sync)
+                {
+                    if (GameProcess != detected)
+                    {
+                        GameProcess = detected; gameSession++; memoryRequested = detected != null;
+                        playingKey = null; lastSuccessfulScan = null; ScanError = null;
+                    }
+                }
+                Log.Poll(J.S(config, "ee_log_path"));
                 if (J.S(config, "inventory_json_path") is { } file && File.Exists(file))
                 {
                     var info = new FileInfo(file); var stamp = (file, info.LastWriteTimeUtc, info.Length);
@@ -134,6 +170,8 @@ public sealed partial class CompanionRuntime
                 }
             }
             catch (OperationCanceledException) when (stop.IsCancellationRequested) { break; }
+            catch (OperationCanceledException)
+            { Event("Public profile request timed out; game monitoring will continue.", "error"); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or InventoryException or JsonException or HttpRequestException)
             { Event("Game integration: " + (e is InventoryException ? e.Message : e.GetType().Name), "error"); }
             try { await Task.Delay(TimeSpan.FromSeconds(2), stop.Token); } catch (OperationCanceledException) { break; }
@@ -142,12 +180,12 @@ public sealed partial class CompanionRuntime
     }
     private async Task CaptureMemory(int pid, CancellationToken cancellation)
     {
-        string key, identity; Dictionary<string, long> known; string[] migratedSections;
+        string key, identity; long session; Dictionary<string, long> known; string[] migratedSections;
         lock (sync)
         {
             var account = registry.Accounts.FirstOrDefault(a => a.Key == playingKey);
             if (account == null) { ScanError = "Waiting for the game log to identify the logged-in account."; return; }
-            key = account.Key; identity = account.Id ?? key; known = account.Profile?.Xp ?? snapshots.Current(identity)?.Xp ?? [];
+            key = account.Key; identity = account.Id ?? key; session = gameSession; known = account.Profile?.Xp ?? snapshots.Current(identity)?.Xp ?? [];
             migratedSections = account.ExpectedMemorySections;
         }
         ScanRunning = true;
@@ -161,7 +199,9 @@ public sealed partial class CompanionRuntime
             var complete = Accept(capture);
             lock (sync)
             {
-                if (playingKey != key || GameProcess != pid) { ScanError = "Account changed during capture; reading discarded."; return; }
+                var currentAccount = registry.Accounts.FirstOrDefault(a => a.Key == key);
+                if (playingKey != key || GameProcess != pid || gameSession != session || (currentAccount?.Id ?? currentAccount?.Key) != identity)
+                { ScanError = "Game session or account identity changed during capture; reading discarded."; memoryRequested = true; return; }
                 var result = snapshots.Commit(capture.Snapshot with { Complete = complete, IdentityVerified = owns }, cancellation);
                 if (result.Promoted) store.Write("memory-sections-" + key, baseline.Union(capture.Sections).ToArray());
                 if (complete) lastSuccessfulScan = J.Node(new { t = J.Now, stacks = capture.Snapshot.Counts.Count, seconds = Math.Round(watch.Elapsed.TotalSeconds, 1) });

@@ -2,11 +2,21 @@
 
 import { $, artUrl, act, api, art, duc, era, esc, fmt, hydrateIcons, icon, plat, statusPill, TASK_STATE, toast } from "./lib.js";
 import { ICON, gimg } from "./game.js";
+import { copyRelicName } from "./clipboard.js";
 
 let stack = [];
 let requestVersion = 0;
 
 export const isOpen = () => !$("#drawer").hidden;
+
+function copyRelic(name) {
+  void copyRelicName(name).then(ok => toast(ok ? `Copied ${name}` : "Couldn't copy the relic name. Try Copy name in its details.", !ok));
+}
+
+export function openRelic(name) {
+  copyRelic(name);
+  return open(name);
+}
 
 /** Something was changed from the drawer: pages listening re-render. */
 const changed = () => window.dispatchEvent(new CustomEvent("wfp:changed"));
@@ -284,7 +294,7 @@ function wireTask(d, t, key, version) {
   const back = d.querySelector("[data-back]");
   if (back) back.onclick = () => { stack.pop(); open(stack[stack.length - 1], false); };
   for (const el of d.querySelectorAll("[data-open]")) {
-    el.onclick = (e) => { e.stopPropagation(); open(el.dataset.open); };
+    el.onclick = (e) => { e.stopPropagation(); if (el.dataset.relic) openRelic(el.dataset.relic); else open(el.dataset.open); };
   }
   for (const b of d.querySelectorAll("[data-count]")) {
     b.onclick = async (e) => {
@@ -314,7 +324,7 @@ function stepper(uid, n) {
 }
 
 function relicChips(relics) {
-  return relics.map((r) => `<span class="chip ${r.vaulted ? "vaulted" : ""} ${r.open ? "open" : ""} ${r.owned ? "owned" : ""}" data-open="${esc(r.relic)}"
+  return relics.map((r) => `<span class="chip ${r.vaulted ? "vaulted" : ""} ${r.open ? "open" : ""} ${r.owned ? "owned" : ""}" data-open="${esc(r.relic)}" data-relic="${esc(r.relic)}"
       title="${esc(r.rarity || "")}${r.chance != null ? ` · ${r.chance}% intact` : ""}${r.vaulted ? " · vaulted" : ""}${r.open ? " · fissure open now" : ""}">
       ${esc(r.relic)}${r.owned ? ` <b class="lotus">×${r.owned}</b>` : ""}</span>`).join("");
 }
@@ -411,7 +421,7 @@ function part(x) {
     ${acquisition(x.name, x.drops, x.dropCoverage)}
     ${x.recipe ? recipeDetails(x.recipe) : !x.recipesAvailable ? `<p class="muted">Component recipes are unavailable; check the wiki.</p>` : ""}
     ${x.relics.length ? `<div class="dsec"><h2>Dropped by <span class="count">${x.relics.length}</span></h2><div class="list">${x.relics.map((r) => `
-      <div class="list-row click" data-open="${esc(r.relic)}"><div class="main"><div class="t">${esc(r.relic)} Relic</div>
+      <div class="list-row click" data-open="${esc(r.relic)}" data-relic="${esc(r.relic)}"><div class="main"><div class="t">${esc(r.relic)} Relic</div>
         <div class="s">${esc(r.rarity || "")}${r.chance != null ? ` · ${r.chance}% intact` : ""}${r.owned ? ` · you own ${r.owned}` : ""}</div></div>
         ${r.open ? `<span class="pill lotus">Fissure open</span>` : ""}${r.vaulted ? `<span class="pill vaulted">Vaulted</span>` : ""}</div>`).join("")}</div></div>` : ""}
     ${x.usedIn.length ? `<div class="dsec"><h2>Builds</h2><div class="list">${x.usedIn.map((i) => `
@@ -426,6 +436,7 @@ function relic(x) {
         <div class="s">${esc(r.rarity || "")} · ${pct(r.chance.Intact)} intact, ${pct(r.chance.Radiant)} radiant${r.have ? ` · you have ${r.have}` : ""}</div></div>
       <div style="text-align:right">${plat(r.price)}<div>${duc(r.ducats)}</div></div></div>`).join("");
   return `<div class="dhead">${art(x.image, "xl")}<div class="grow"><h2>${esc(x.name)} Relic</h2>
+      <button type="button" class="ghost" data-copy-relic="${esc(x.name)}" title="Copy the name for Warframe search">Copy name</button>
       <div class="row wrap">${era(x.era)}${x.vaulted ? `<span class="pill vaulted">Vaulted</span>` : ""}
         ${x.open ? `<span class="pill lotus">${icon("fissures")} Fissure open now</span>` : ""}</div></div></div>
     <div class="kv">
@@ -444,7 +455,7 @@ function wire(d, x, version) {
   const back = d.querySelector("[data-back]");
   if (back) back.onclick = () => { stack.pop(); open(stack[stack.length - 1], false); };
   for (const el of d.querySelectorAll("[data-open]")) {
-    el.onclick = (e) => { e.stopPropagation(); open(el.dataset.open); };
+    el.onclick = (e) => { e.stopPropagation(); if (el.dataset.relic) openRelic(el.dataset.relic); else open(el.dataset.open); };
   }
   for (const b of d.querySelectorAll("[data-count]")) {
     b.onclick = async (e) => {
@@ -453,6 +464,7 @@ function wire(d, x, version) {
       if (await act("manual/count", { uid: b.dataset.count, count })) refresh();
     };
   }
+  for (const button of d.querySelectorAll("[data-copy-relic]")) button.onclick = () => copyRelic(button.dataset.copyRelic);
   const pin = d.querySelector("[data-pin]");
   if (pin) pin.onclick = async () => {
     if (await act("manual/pin", { uid: x.key, pinned: !x.pinned }, x.pinned ? "Unpinned" : "Pinned to the Overview")) refresh();

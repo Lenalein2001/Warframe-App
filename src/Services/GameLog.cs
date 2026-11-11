@@ -20,6 +20,7 @@ public sealed class GameLog
     private readonly Decoder decoder = Encoding.UTF8.GetDecoder();
     private bool skipPartialLine;
     private bool rewardOpen;
+    private (string Path, DateTime Modified, long Length)? configStamp;
     public event Action<LogSignal>? Signal;
     public static string StripGlyphs(string text) => new(text.Where(c => c is < '\ue000' or > '\uf8ff').ToArray());
     public static string? PlayerName(string? text) => text == null ? null : StripGlyphs(text).Trim();
@@ -30,7 +31,7 @@ public sealed class GameLog
         if (!named && !ownReward) yield break;
         var ids = Regex.Matches(line, @"(?<![0-9a-f])[0-9a-f]{24}(?![0-9a-f])").Select(m => m.Value).Where(id => id.Any(c => c != '0')).ToArray();
         foreach (var id in ids)
-            yield return new("candidate", ownReward ? "Local client sent relic reward information to the host." : "Game log names the local player alongside this account ID.", id, Sure: ids.Length == 1);
+            yield return new("candidate", ownReward ? "Local client sent relic reward information to the host." : "Game log names the local player alongside this account ID.", id, Sure: ownReward && ids.Length == 1);
     }
     public static IEnumerable<LogSignal> Parse(string line)
     {
@@ -91,11 +92,16 @@ public sealed class GameLog
         }
         Active = true;
         var cfg = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(path)!, "EE.cfg");
-        if (File.Exists(cfg) && new FileInfo(cfg).Length < 2 * 1024 * 1024)
+        var configInfo = new FileInfo(cfg);
+        if (!configInfo.Exists) { configStamp = null; Scale = null; }
+        else if (configInfo.Length < 2 * 1024 * 1024)
         {
+            var stamp = (cfg, configInfo.LastWriteTimeUtc, configInfo.Length);
+            if (configStamp == stamp) return;
             using var file = new FileStream(cfg, FileMode.Open, FileAccess.Read, FileShare.ReadWrite); using var reader = new StreamReader(file);
             var match = Regex.Match(reader.ReadToEnd(), @"Flash\.FlashDrawScale\s*=\s*([0-9.]+)");
-            if (match.Success && double.TryParse(match.Groups[1].Value, CultureInfo.InvariantCulture, out var scale) && scale is >= .3 and <= 2) Scale = scale;
+            Scale = match.Success && double.TryParse(match.Groups[1].Value, CultureInfo.InvariantCulture, out var scale) && scale is >= .3 and <= 2 ? scale : null;
+            configStamp = stamp;
         }
     }
 }

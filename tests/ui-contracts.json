@@ -67,23 +67,24 @@
     "web/icons/endo.png": "5eefae4d4a1feb6d08245ff840b6b946f476c8e93e57bd575efd42d0ec94d974",
     "web/icons/platinum.png": "30dc141ea9e75dae6a0ff01ef75ed19fa58c30755daaa0f083a891e5fed9800c",
     "web/index.html": "2895b872207f8543bbc2856c3fba95b50323a4e8e0f559cf940073c2d7f4d1d2",
-    "web/js/drawer.js": "fbe6393aafc5df4af78e5f0ade7da55390a2d02f7182fbadd6509592fe7b88ca",
+    "web/js/drawer.js": "2895a3687d7540d08b7f31ad2f5372151f0e18246fd5bac378cd0999c4eb1fda",
     "web/js/game.js": "e4b6bd63cada53b5052995f64c89589847373c09b03b533084655e8dfcd17824",
     "web/js/lib.js": "840a04bdb864a54fe3f4bf48c962cc64c249268c77242f94eca97117a917b236",
     "web/js/main.js": "f358daf324a8778ea8f598e30e0b4ba15a01bfaa8a7956242c3678d4372b52f2",
     "web/js/pages/farming.js": "fbf7fc7c320e3c396aefd049e6eb81a348df099b1f9196d982e8b9c4ac964d5e",
     "web/js/pages/fissures.js": "eaf9146e94fe4b86a937dafedfd7780e7b4cfa60a9e31e96d6b5831734e7440a",
     "web/js/pages/foundry.js": "98dbdbfcc437d63550457927071f2e637888acfa9559960df79b3d95c11a6158",
-    "web/js/pages/home.js": "516452290b8ffb6eed5d925b16b1d1da27d3814ebc5c43a86835a8c57760ab77",
+    "web/js/pages/home.js": "b7785f3bc3994a66400c12cbac6311f1a024921d4d83ff045a8eb4c0b5fda208",
     "web/js/pages/inventory.js": "533d99c3129bb2011b30740472df69aac4fa0463d4a9b40a7f9b1c9f97652906",
     "web/js/pages/market.js": "553e0b78823f4b0d09a93d9eab7ac577ec6efb95423c557619f2e597a48b9427",
     "web/js/pages/mastery.js": "0b27fc521ed2c9e8ac0c848d31d06b44177bd2319c5d0f7ab36de6d9b705d934",
     "web/js/pages/primes.js": "662a66723bc8b092d22e42060541bc0af6bced5bbe1520e5c7778f5c80e30e35",
-    "web/js/pages/relics.js": "762f5d6b40570424ec1e37fc3ed22a2f0a305fe3408b1d8d3b09337c8856f484",
+    "web/js/pages/relics.js": "c369c8fd9ff68c78c688c351ceca8c4f497a3937dfd33e383f60ad451895c0d1",
     "web/js/pages/settings.js": "233df2dbe06cef06b5c5ce8564db435e8599b32e0fd21bd517eb38b4ce9caa94",
     "web/js/pages/standing.js": "1f6e3556f84d054c4733550c8b370a935a94c0bb47c7d9382b394bd9ef917040",
     "web/js/pages/world.js": "826c6377fbcc206977f91f8f381b424ae71c82b05a1eb32f0dde6c9a507e1a2c",
     "web/js/palette.js": "a9c5a6a92a66be1deeba95837213a00786bdbc65fb39fed08c02e6f7e5d94d81",
-    "web/overlay.html": "c5826f29633abdd15320668b5c717844109f8616a77ae7bcbc3bcbef4f3e31a1"
+    "web/overlay.html": "c5826f29633abdd15320668b5c717844109f8616a77ae7bcbc3bcbef4f3e31a1",
+    "web/js/clipboard.js": "d02f9d5d55c769a061536b8cd1888e0828d6b40e7ecd920b2b5cbd9e386f77b8"
   }
 }
