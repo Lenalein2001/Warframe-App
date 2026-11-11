@@ -30,10 +30,10 @@ jobs:
           # The hosted runner's HTTP Azure mirror can time out per package.
           # Use Ubuntu's HTTPS mirrors in this disposable CI image.
           if [ -f /etc/apt/apt-mirrors.txt ]; then
-            printf '%s\n' 'https://archive.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors.txt
+            printf '%s\n' 'https://mirrors.edge.kernel.org/ubuntu' 'https://archive.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors.txt
           fi
           if [ -f /etc/apt/apt-mirrors-security.txt ]; then
-            printf '%s\n' 'https://security.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors-security.txt
+            printf '%s\n' 'https://mirrors.edge.kernel.org/ubuntu' 'https://security.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors-security.txt
           fi
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 update
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 install --no-install-recommends -y libgtk-3-dev libwebkit2gtk-4.1-dev libgtk-layer-shell-dev libnotify4 xvfb dbus-x11 dunst scrot x11-utils tesseract-ocr
@@ -60,11 +60,12 @@ jobs:
       - run: nix-build -o artifacts/linux-package
       - name: Exercise packaged Linux desktop
         run: |
-          nix-shell -p xorg.xorgserver xorg.xwininfo xorg.xdpyinfo dbus dunst scrot python3 --run '
+          nix-shell -p xorg-server xwininfo xdpyinfo dbus dunst scrot python3 --run '
             export DISPLAY=:99
             Xvfb :99 -screen 0 1920x1080x24 &
             display_pid=$!
             trap "kill $display_pid" EXIT
             for attempt in $(seq 1 50); do xdpyinfo >/dev/null 2>&1 && break; sleep .1; done
-            dbus-run-session -- python tools/smoke-linux-desktop.py artifacts/linux-package/bin/WarframeCompanion.Desktop
+            bus_package=$(nix-build "<nixpkgs>" -A dbus --no-out-link)
+            dbus-run-session --config-file="$bus_package/share/dbus-1/session.conf" -- python tools/smoke-linux-desktop.py artifacts/linux-package/bin/WarframeCompanion.Desktop
           '
