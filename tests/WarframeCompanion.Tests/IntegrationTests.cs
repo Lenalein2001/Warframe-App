@@ -246,6 +246,25 @@ public static class IntegrationTests
             Check(!GameLog.Parse("OnMasteryIconReady1(Loaded:/Rank99999999999999999999_icon)").Any(), "Overflow rank accepted");
             Check(!GameLog.Parse("RollDuviriOffers /Lotus/Item generated as an owned Cave selection for category: 99999999999999999999").Any(s => s.Kind == "duviri-item"), "Overflow category accepted");
         });
+        test("Deferred desktop startup serves the UI before game monitoring begins", () => InDirectory(directory =>
+        {
+            using var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port; listener.Stop();
+            var log = Path.Combine(directory, "EE.log");
+            File.WriteAllText(log, "Sys [Info]: Logged in DeferredFixture\n");
+            var settings = Settings.Defaults(); settings["ee_log_path"] = log; settings["memory_scan_enabled"] = false;
+            new StateStore(Path.Combine(directory, "state.sqlite")).Write("settings", settings);
+            var server = CompanionServer.Start(directory, offline: true, port: port, watchGame: false, deferRuntimeStart: true).GetAwaiter().GetResult();
+            try
+            {
+                using var client = new HttpClient(new HttpClientHandler { UseProxy = false });
+                Check(client.GetStringAsync(server.Url).GetAwaiter().GetResult().Contains("<html"), "Deferred startup cannot serve UI assets");
+                Check(server.Runtime.Log.Player == null, "Game log read before window creation");
+                server.Runtime.Start(false);
+                Check(server.Runtime.Log.Player == null, "No-game startup activated monitoring");
+            }
+            finally { server.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
         test("Profile ownership prevents duplicate writers and authenticates window activation", () => InDirectory(directory =>
         {
             using var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start();

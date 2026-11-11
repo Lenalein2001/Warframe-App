@@ -43,3 +43,5 @@ The running app writes `api-<port>.auth` in its data directory with user-only ac
 Extract the entire portable archive before opening its top-level launcher. Keep the `app/` directory beside it. Opening the same profile twice activates its existing desktop window; headless instances must be stopped before opening that profile in the desktop app. Separate profiles can run with different `--data-dir` and `--port` values.
 
 Windows startup errors use a native message box. Headless commands report errors to stderr. If a data directory has been selected, startup failures can also write `startup-error.log` there; it contains the error type and general recovery instructions, not account or inventory data. The empty `.instance.lock` file is normal and may remain after exit. Do not delete it to bypass a running instance.
+
+`startup-timing.log` records elapsed startup phases, including native window creation. It contains fixed stage names and timings only. This separates backend readiness from actual window startup; headless startup checks do not validate WebView rendering.

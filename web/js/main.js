@@ -288,3 +288,6 @@ hydrateIcons(document.body);
 poll().then(() => go());
 setInterval(() => { if (!document.hidden) poll(); }, 5000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+
+// Fixed diagnostic marker; no profile data crosses the native bridge.
+window.external?.sendMessage?.("companion-ui-ready");

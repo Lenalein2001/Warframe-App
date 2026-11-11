@@ -18,7 +18,7 @@ with tempfile.TemporaryDirectory(prefix='wfc-manifest-') as temporary:
     (root / 'Host.dll').write_bytes(b'changed assembly')
     run('--verify', success=False)
     (root / 'Host.dll').write_bytes(b'synthetic assembly')
-    for name in ('api-8642.auth', 'state.sqlite-wal', 'debug.pdb', '.instance.lock', 'startup-error.log'):
+    for name in ('api-8642.auth', 'state.sqlite-wal', 'debug.pdb', '.instance.lock', 'startup-error.log', 'startup-timing.log'):
         forbidden = root / name
         forbidden.write_bytes(b'private fixture')
         run(success=False)

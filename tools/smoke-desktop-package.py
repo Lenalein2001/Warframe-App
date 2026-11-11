@@ -58,6 +58,7 @@ for edition in ('framework-dependent', 'self-contained'):
                             if time.monotonic() - started > 60:
                                 raise RuntimeError(f'{edition} did not start within 60 seconds')
                             time.sleep(.2)
+                    backend_seconds = time.monotonic() - started
                     assert state['accounts'] == [], 'Package accessed real account data'
                     assert b'<html' in request(port, ''), 'Embedded interface missing'
                     duplicate = subprocess.run([str(executable), '--headless', '--offline', '--no-game',
@@ -76,7 +77,7 @@ for edition in ('framework-dependent', 'self-contained'):
                                              capture_output=True, timeout=30, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
                     assert command.returncode == 0, 'Authenticated desktop command failed with a proxy configured'
                     assert process.wait(timeout=15) == 0, 'Unclean application shutdown'
-                    print(f'{edition}: {"restart" if restart else "first start"}, isolated data and clean shutdown passed')
+                    print(f'{edition}: {"restart" if restart else "first start"}, headless backend ready in {backend_seconds:.3f}s, isolated data and clean shutdown passed')
                 finally:
                     if process.poll() is None:
                         process.kill()

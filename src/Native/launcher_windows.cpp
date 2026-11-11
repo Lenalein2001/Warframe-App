@@ -21,6 +21,9 @@ static std::wstring quote(const std::wstring& value) {
 }
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
+    FILETIME started{}; GetSystemTimeAsFileTime(&started);
+    ULARGE_INTEGER ticks{}; ticks.LowPart = started.dwLowDateTime; ticks.HighPart = started.dwHighDateTime;
+    SetEnvironmentVariableW(L"WFC_LAUNCH_FILETIME", std::to_wstring(ticks.QuadPart).c_str());
     std::wstring path(32768, L'\0');
     const auto length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
     if (!length || length >= path.size()) return ERROR_BAD_PATHNAME;

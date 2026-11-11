@@ -42,3 +42,4 @@ api-*.auth.*
 # Runtime instance coordination and startup diagnostics.
 .instance.lock
 startup-error.log
+startup-timing.log
