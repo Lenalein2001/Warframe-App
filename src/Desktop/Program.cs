@@ -34,10 +34,10 @@ internal static class Program
             var server = CompanionServer.Start(directory, options.ContainsKey("--offline"), port, migrateLegacy: options.ContainsKey("--migrate-legacy") || !options.ContainsKey("--portable") && !options.ContainsKey("--data-dir"), watchGame: !options.ContainsKey("--no-game")).GetAwaiter().GetResult();
             try
             {
-                if (options.ContainsKey("--browser")) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(server.Url) { UseShellExecute = true });
+                if (options.ContainsKey("--browser")) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(server.LaunchUrl) { UseShellExecute = true });
                 if (options.ContainsKey("--headless") || options.ContainsKey("--browser")) { server.WaitForShutdown().GetAwaiter().GetResult(); return 0; }
                 var window = new PhotinoWindow { LogVerbosity = 0 }.SetTitle("Warframe App").SetUseOsDefaultSize(false).SetSize(new Size(1280, 860)).Center()
-                    .SetContextMenuEnabled(false).SetDevToolsEnabled(false).SetTemporaryFilesPath(Path.Combine(directory, "webview")).Load(server.Url);
+                    .SetContextMenuEnabled(false).SetDevToolsEnabled(false).SetTemporaryFilesPath(Path.Combine(directory, "webview")).Load(server.LaunchUrl);
                 using var overlay = new NativeOverlay(window, server.Url, Path.GetFullPath(directory), message => server.Runtime.Event(message, "error"));
                 using var hotkeys = new NativeHotkeys(server.Runtime, server.Url);
                 server.Runtime.OverlayRequested += overlay.Show; server.Runtime.OverlayHidden += overlay.Hide;

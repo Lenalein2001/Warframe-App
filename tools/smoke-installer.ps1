@@ -17,11 +17,11 @@ $process = Start-Process -FilePath $executable -ArgumentList @('--headless','--o
 try {
     $ready = $false
     for ($attempt = 0; $attempt -lt 100; $attempt++) {
-        try { $state = Invoke-RestMethod 'http://127.0.0.1:28766/api/state' -TimeoutSec 2; $ready = $true; break } catch { Start-Sleep -Milliseconds 300 }
+        try { $headers = @{ Authorization = (Get-Content -Raw (Join-Path $data 'api-28766.auth')).Trim().Substring(15) }; $state = Invoke-RestMethod 'http://127.0.0.1:28766/api/state' -Headers $headers -TimeoutSec 2; $ready = $true; break } catch { Start-Sleep -Milliseconds 300 }
     }
     if (!$ready -or $state.accounts.Count -ne 0) { throw 'Installed application did not start in isolated mode.' }
-    Invoke-RestMethod 'http://127.0.0.1:28766/api/settings' -Method Post -ContentType application/json -Body '{"notify":true}' | Out-Null
-    Invoke-RestMethod 'http://127.0.0.1:28766/api/quit' -Method Post -ContentType application/json -Body '{}' | Out-Null
+    Invoke-RestMethod 'http://127.0.0.1:28766/api/settings' -Headers $headers -Method Post -ContentType application/json -Body '{"notify":true}' | Out-Null
+    Invoke-RestMethod 'http://127.0.0.1:28766/api/quit' -Headers $headers -Method Post -ContentType application/json -Body '{}' | Out-Null
     if (!$process.WaitForExit(15000)) { throw 'Installed application did not shut down.' }
 } finally {
     if (!$process.HasExited) { Stop-Process -Id $process.Id -Force }

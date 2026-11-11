@@ -57,7 +57,9 @@ internal sealed class NativeHotkeys(CompanionRuntime runtime, string url) : IDis
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile); var dir = Path.Combine(home, ".config", hypr ? "hypr" : "sway"); var main = Path.Combine(dir, lua ? "lua/keybindings.lua" : hypr ? "hyprland.conf" : "config");
         if (!File.Exists(main)) throw new InventoryException("Compositor configuration was not found.");
         var config = runtime.GetSettings(); var pairs = new[] { (J.S(config, "hotkey_rewards"), "rewards/scan"), (J.S(config, "hotkey_riven"), "riven/scan") };
-        var lines = pairs.Where(p => !string.IsNullOrWhiteSpace(p.Item1)).Select(p => CompositorBindings.Line(flavour, p.Item1!, "curl -s -X POST " + url + "/api/" + p.Item2)).ToArray();
+        var authFile = WarframeCompanion.Host.LocalApiCredential.PathFor(runtime.DataDirectory, new Uri(url).Port);
+        if (authFile.Any(c => c is '\n' or '\r' or '#' or '$' or '"' or '\\' or '\'')) throw new InventoryException("Hotkey configuration requires a data path without shell metacharacters.");
+        var lines = pairs.Where(p => !string.IsNullOrWhiteSpace(p.Item1)).Select(p => CompositorBindings.Line(flavour, p.Item1!, "curl -s -H @'" + authFile + "' -X POST " + url + "/api/" + p.Item2)).ToArray();
         if (lua)
         {
             var merged = CompositorBindings.MergeLua(File.ReadAllText(main), lines);

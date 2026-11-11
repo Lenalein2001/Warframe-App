@@ -208,6 +208,7 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
                         store.Write("settings", updated); oldMarket = Market; Market = nextMarket; World = new(cache, platform); Rivens.SetPlatform(platform);
                     }
                     if (oldMarket == null) store.Write("settings", updated); settings = updated;
+                    if (!J.B(settings["memory_scan_enabled"])) memoryCancellation?.Cancel();
                 }
                 if (oldMarket != null) { try { await Market.Load(cancellation); } catch (Exception e) when (e is IOException or HttpRequestException or JsonException) { Event("Market metadata is unavailable on the selected platform.", "error"); } await World.Refresh(cancellation); await Rivens.Refresh(J.S(GetSettings(), "platform")!, cancellation); }
                 if (J.Get(body, "hotkey_rewards") != null || J.Get(body, "hotkey_riven") != null) { try { if (OperatingSystem.IsWindows()) RegisterHotkeys?.Invoke(); } catch (InventoryException e) { Event(e.Message, "error"); } }

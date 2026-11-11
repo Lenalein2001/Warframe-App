@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using WarframeCompanion.Core;
@@ -24,7 +25,7 @@ public static class MemoryProvider
         }
         return null;
     }
-    public static MemoryCapture? Decode(ReadOnlySpan<byte> bytes, int marker, string account, Action<string>? diagnostic = null)
+    public static MemoryCapture? Decode(ReadOnlySpan<byte> bytes, int marker, string account, Action<string>? diagnostic = null, CancellationToken cancellation = default)
     {
         ReadOnlySpan<byte> needle = "\"LastInventorySync\""u8;
         if (marker < 0 || marker > bytes.Length - needle.Length || !bytes.Slice(marker, needle.Length).SequenceEqual(needle)) return null;
@@ -42,6 +43,7 @@ public static class MemoryProvider
         }
         foreach (var start in starts.Distinct().Order().Take(64))
         {
+            cancellation.ThrowIfCancellationRequested();
             var addBrace = bytes[start] != '{';
             var prefix = addBrace ? 1 : 0;
             var input = new byte[bytes.Length - start + prefix];
@@ -67,6 +69,7 @@ public static class MemoryProvider
                     }
                 if (!topLevelHit) { diagnostic?.Invoke("Inventory marker is nested rather than top-level."); if (!addBrace) return null; continue; }
                 // Only the allowlisted normalized snapshot crosses the persistence boundary.
+                cancellation.ThrowIfCancellationRequested();
                 var parsed = InventoryParser.Parse(input.AsMemory(0, checked((int)reader.BytesConsumed)), account);
                 var sections = root.EnumerateObject().Select(p => p.Name).Where(IsInventorySection).ToArray();
                 return new(parsed with { Provider = "game memory" }, sections);
@@ -75,6 +78,7 @@ public static class MemoryProvider
             {
                 diagnostic?.Invoke(error is JsonException json ? $"Invalid JSON at byte {json.BytePositionInLine}." : error.Message);
             }
+            finally { CryptographicOperations.ZeroMemory(input); }
         }
         return null;
     }
@@ -111,14 +115,20 @@ public static class MemoryProvider
                 diagnostic?.Invoke($"Candidate bytes: {size}; marker offset: {marker}.");
                 if (size > InventoryParser.MaxBytes || marker >= size) return 1;
                 var bytes = new byte[checked((int)size)];
-                Marshal.Copy(pointer, bytes, 0, bytes.Length);
-                var capture = Decode(bytes, checked((int)marker), account, diagnostic);
-                if (capture != null) best = Prefer(best, capture, acceptable);
+                try
+                {
+                    Marshal.Copy(pointer, bytes, 0, bytes.Length);
+                    var capture = Decode(bytes, checked((int)marker), account, diagnostic, cancellation);
+                    cancellation.ThrowIfCancellationRequested();
+                    if (capture != null) best = Prefer(best, capture, acceptable);
+                }
+                finally { CryptographicOperations.ZeroMemory(bytes); }
                 return 1;
             }
             catch (Exception error) { callbackFailure = error; return 0; }
         };
         ProgressCallback progress = (bytes, _) => { scanned = bytes; return cancellation.IsCancellationRequested ? 0 : 1; };
+        cancellation.ThrowIfCancellationRequested();
         var result = ScanNative(pid, candidate, progress, 0);
         GC.KeepAlive(candidate);
         GC.KeepAlive(progress);

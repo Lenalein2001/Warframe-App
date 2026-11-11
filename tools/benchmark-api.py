@@ -9,6 +9,7 @@ import urllib.request
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--url', default='http://127.0.0.1:8642')
+parser.add_argument('--data-dir', type=pathlib.Path, required=True)
 parser.add_argument('--rounds', type=int, default=30)
 parser.add_argument('--output', type=pathlib.Path)
 args = parser.parse_args()
@@ -17,12 +18,13 @@ if url.scheme != 'http' or url.hostname not in ('127.0.0.1', 'localhost') or url
     parser.error('Use a local companion HTTP address.')
 if not 5 <= args.rounds <= 1000:
     parser.error('Choose 5–1000 rounds.')
+credential = (args.data_dir / f'api-{url.port or 8642}.auth').read_text().removeprefix('Authorization: ').strip()
 result = {}
 for route in ('state', 'inventory', 'mastery', 'primes', 'relics'):
     timings = []
     for sample in range(args.rounds + 3):
         start = time.perf_counter()
-        with urllib.request.urlopen(args.url.rstrip('/') + '/api/' + route, timeout=30) as response:
+        with urllib.request.urlopen(urllib.request.Request(args.url.rstrip('/') + '/api/' + route, headers={'Authorization': credential}), timeout=30) as response:
             body = response.read()
         elapsed = (time.perf_counter() - start) * 1000
         json.loads(body)

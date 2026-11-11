@@ -74,7 +74,34 @@ Settings and account data are stored outside the installation directory by defau
 
 Updates and uninstallers preserve user data. Back up the data folder before moving profiles between machines. Existing legacy data is copied on first normal startup without changing the original files.
 
-Inventory data comes from public exports, profiles, logs, imports and optional read-only process capture. Memory capture is disabled by default. Reward choices and on-screen riven cards use OCR when a reliable direct source is unavailable. The app does not modify or inject into the game process.
+The app combines several sources; none should be mistaken for a complete official inventory API:
+
+| Source | What it supplies |
+| --- | --- |
+| Public catalogs and community services | Item definitions, recipes, drop tables, world state and market estimates. |
+| Public account profiles | Profile and mastery information; not a complete inventory. |
+| Local `EE.log` / `EE.cfg` | Account/session signals and interface scale, read without changing game files. |
+| Imports and manual tracking | User-supplied inventory snapshots, counts and collection progress. |
+| Optional process-memory capture | Inventory found in the running game through read-only OS access. Disabled by default; existing choices are retained. |
+| Screenshot/OCR fallback | Visible relic reward names and riven cards, processed locally. |
+
+## What the app does—and does not do
+
+The companion helps you inspect information and plan your next action. It **does not write to Warframe's process memory, inject code, modify game files, simulate gameplay input, sell items, craft items, automate missions, or log in to game services with your credentials**. Editing counts or clearing inventory in the companion changes its own records, not your in-game inventory. Relic-name copying writes to the clipboard; you choose when to paste it.
+
+Overlays are separate desktop windows. OCR uses screen pixels and temporary local files; when game-window capture is unavailable, capture can include other desktop content. Memory scanning can temporarily encounter unrelated game bytes. Raw scan buffers are cleared when released; only recognized inventory fields are saved. This is data minimization, not a promise that sensitive data can never exist in process memory or an OS crash dump.
+
+Disabling memory capture cancels active work and prevents cancelled results from being saved. Scans have time and byte limits, do not elevate privileges, and stop when the operating system denies access. Existing confirmed inventory remains available when capture fails.
+
+### Local API and privacy
+
+The local HTTP service binds to loopback and requires a random credential regenerated on every launch. The desktop interface authenticates automatically using an HttpOnly, SameSite cookie. CLI commands and registered Linux shortcuts read a user-restricted `api-<port>.auth` file in the data directory. Credentials are removed on clean shutdown; do not share these files. Old custom HTTP scripts need to supply the current Authorization header.
+
+Host/origin checks and cross-site request rejection provide additional browser protection. These controls do **not** isolate the app from malware already running as your user, administrators, or someone with access to your data directory. Keep portable data in private storage. Account data stays local; requests for profiles, prices and artwork necessarily disclose the requested account/item identifiers to the corresponding service. No whole-inventory upload is implemented.
+
+### Publisher policy
+
+Read-only access is not a guarantee of publisher permission or protection from account enforcement. This project is not approved by Digital Extremes. Review the [Warframe EULA](https://www.warframe.com/en/eula) and [DE's third-party software guidance](https://forums.warframe.com/topic/1383123-third-party-software-usage/) before enabling game integrations. Functional tests cannot certify EULA compliance.
 
 See [usage](docs/USAGE.md) for account setup, notifications and command-line options.
 

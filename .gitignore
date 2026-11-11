@@ -34,3 +34,7 @@ codex-clipboard-*
 src/Native/build/
 __pycache__/
 *.py[cod]
+
+# Per-launch local API credentials are private runtime files.
+api-*.auth
+api-*.auth.*

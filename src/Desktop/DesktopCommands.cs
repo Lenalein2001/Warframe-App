@@ -33,6 +33,7 @@ internal static class DesktopCommands
             var port = options.GetValueOrDefault("--port") is { } number ? int.Parse(number, CultureInfo.InvariantCulture) : (int)J.N(saved, "port", 8642);
             if (port is < 1024 or > 65535) throw new ArgumentException("Invalid port.");
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(65) };
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", WarframeCompanion.Host.LocalApiCredential.Read(directory, port));
             var route = command == "trigger" ? "rewards/scan" : command == "riven" ? "riven/scan" : "quit";
             using var response = await client.PostAsync($"http://127.0.0.1:{port}/api/{route}", new StringContent("{}", Encoding.UTF8, "application/json"));
             Console.WriteLine(await response.Content.ReadAsStringAsync());

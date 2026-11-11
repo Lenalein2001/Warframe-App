@@ -113,6 +113,74 @@ public static class IntegrationTests
             Check(updated.Text.StartsWith("-- User configuration", StringComparison.Ordinal) && updated.Text.EndsWith("-- User footer\n", StringComparison.Ordinal) && !updated.Text.Contains("hl.bind"), "Disabling keys changed user configuration");
             try { CompositorBindings.MergeLua("-- >>> warframeproject hotkeys (managed)", []); throw new Exception("Broken managed block accepted"); } catch (InventoryException) { }
         });
+        test("API credentials rotate, stay private and are removed on shutdown", () => InDirectory(directory =>
+        {
+            using var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port; listener.Stop();
+            string? previous = null;
+            for (var pass = 0; pass < 2; pass++)
+            {
+                var server = CompanionServer.Start(directory, offline: true, port: port, watchGame: false).GetAwaiter().GetResult();
+                try
+                {
+                    var credential = LocalApiCredential.Read(directory, port);
+                    Check(credential != previous, "Credential was reused after restart");
+                    if (OperatingSystem.IsWindows())
+                    {
+                        var security = System.IO.FileSystemAclExtensions.GetAccessControl(new FileInfo(LocalApiCredential.PathFor(directory, port)));
+                        var user = System.Security.Principal.WindowsIdentity.GetCurrent().User!;
+                        var rules = security.GetAccessRules(true, true, typeof(System.Security.Principal.SecurityIdentifier)).Cast<System.Security.AccessControl.FileSystemAccessRule>().ToArray();
+                        Check(security.AreAccessRulesProtected && rules.Length == 1 && rules[0].IdentityReference == user, "Credential ACL is not restricted to the current user");
+                    }
+                    if (!OperatingSystem.IsWindows()) Check(File.GetUnixFileMode(LocalApiCredential.PathFor(directory, port)) == (UnixFileMode.UserRead | UnixFileMode.UserWrite), "Credential permissions are not private");
+                    using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false });
+                    if (previous != null) {
+                        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", previous);
+                        using var rejected = client.GetAsync(server.Url + "/api/state").GetAwaiter().GetResult();
+                        Check(rejected.StatusCode == HttpStatusCode.Unauthorized, "Previous session credential was accepted");
+                    }
+                    using var invalid = client.GetAsync(server.Url + "/session?token=wrong").GetAwaiter().GetResult();
+                    Check(invalid.StatusCode == HttpStatusCode.Unauthorized, "Invalid session bootstrap accepted");
+                    using var session = client.GetAsync(server.LaunchUrl).GetAwaiter().GetResult();
+                    var cookie = string.Join(";", session.Headers.GetValues("Set-Cookie"));
+                    Check(cookie.Contains("httponly", StringComparison.OrdinalIgnoreCase) && cookie.Contains("samesite=strict", StringComparison.OrdinalIgnoreCase), "Session cookie missing browser protections");
+                    Check(session.Headers.Location?.OriginalString == "/", "Session did not remove credential from navigation URL");
+                    previous = credential;
+                }
+                finally { server.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+                Check(!File.Exists(LocalApiCredential.PathFor(directory, port)), "Credential remained after clean shutdown");
+            }
+        }));
+        test("Disabling memory capture cancels active work and discards a late result", () => InDirectory(directory =>
+        {
+            const string id = "0123456789abcdef01234567";
+            var store = new StateStore(Path.Combine(directory, "state.sqlite"));
+            store.Write("registry", new RegistryState { Active = "fixture", Accounts = [new() { Key = "fixture", Id = id }] });
+            var settings = Settings.Defaults(); settings["memory_scan_enabled"] = true; store.Write("settings", settings);
+            var runtime = new CompanionRuntime(directory, true);
+            typeof(CompanionRuntime).GetField("playingKey", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(runtime, "fixture");
+            typeof(CompanionRuntime).GetProperty("GameProcess")!.SetValue(runtime, 123);
+            using var entered = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
+            CancellationToken observed = default;
+            runtime.ReadMemory = (_, _, token, _) => {
+                observed = token; entered.Set(); release.Wait(TimeSpan.FromSeconds(10));
+                return new(InventoryParser.Parse(Encoding.UTF8.GetBytes("{\"MiscItems\":[],\"LastInventorySync\":100}"), id), ["MiscItems"]);
+            };
+            Task? capture = null;
+            try
+            {
+                capture = runtime.CaptureMemory(123, CancellationToken.None);
+                Check(entered.Wait(TimeSpan.FromSeconds(5)), "Synthetic capture did not start");
+                runtime.Post("settings", JsonNode.Parse("{\"memory_scan_enabled\":false}")!, CancellationToken.None).GetAwaiter().GetResult();
+                Check(observed.IsCancellationRequested, "Disabling did not cancel the active capture");
+                release.Set(); capture.GetAwaiter().GetResult();
+                Check(!runtime.ScanRunning, "Cancelled scanner stayed running");
+                Check(new SnapshotStore(Path.Combine(directory, "companion.sqlite")).History(id).Count == 0, "Cancelled result was persisted");
+                using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+                try { MemoryProvider.Scan(int.MaxValue, id, cancelled.Token); throw new Exception("Cancelled scan proceeded"); } catch (OperationCanceledException) { }
+            }
+            finally { release.Set(); capture?.GetAwaiter().GetResult(); runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
         test("Desktop startup does not wait for historical game log processing", () => InDirectory(directory =>
         {
             var path = Path.Combine(directory, "EE.log"); File.WriteAllText(path, "Sys [Info]: Logged in Fixture\n");
@@ -525,6 +593,18 @@ public static class IntegrationTests
         var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start(); var port = ((IPEndPoint)listener.LocalEndpoint).Port; listener.Stop();
         await using var server = await CompanionServer.Start(directory, offline: true, port: port, watchGame: false);
         using var client = new HttpClient { BaseAddress = new Uri(server.Url), Timeout = TimeSpan.FromSeconds(10) };
+        using (var rejected = await client.GetAsync("/api/state")) Check(rejected.StatusCode == HttpStatusCode.Unauthorized, "Anonymous inventory access accepted");
+        using (var rejected = await client.PostAsync("/api/quit", null)) Check(rejected.StatusCode == HttpStatusCode.Unauthorized, "Anonymous action accepted");
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", "Bearer wrong");
+        using (var rejected = await client.GetAsync("/api/settings")) Check(rejected.StatusCode == HttpStatusCode.Unauthorized, "Invalid credential accepted");
+        client.DefaultRequestHeaders.Remove("Authorization");
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", LocalApiCredential.Read(directory, port));
+        using (var request = new HttpRequestMessage(HttpMethod.Get, "/api/state")) { request.Headers.Add("Sec-Fetch-Site", "cross-site"); using var rejected = await client.SendAsync(request); Check(rejected.StatusCode == HttpStatusCode.Forbidden, "Cross-site authenticated request accepted"); }
+        using (var browser = new HttpClient())
+        {
+            using var entry = await browser.GetAsync(server.LaunchUrl); Check(entry.IsSuccessStatusCode, "Browser session bootstrap failed");
+            using var state = await browser.GetAsync(server.Url + "/api/state"); Check(state.IsSuccessStatusCode, "Browser session cookie failed");
+        }
         async Task<JsonNode> Get(string path) => JsonNode.Parse(await client.GetStringAsync(path))!;
         async Task<JsonNode> Post(string path, string json, HttpStatusCode status = HttpStatusCode.OK)
         {

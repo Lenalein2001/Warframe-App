@@ -16,6 +16,8 @@ internal sealed class NativeOverlay(PhotinoWindow parent, string url, string dir
     public void Show(OverlayRequest request) => parent.Invoke(() => { try { ShowOnUi(request); } catch (Exception e) { overlay = null; reportError("Overlay failed: " + e.Message); } });
     private void ShowOnUi(OverlayRequest request)
     {
+        var credential = WarframeCompanion.Host.LocalApiCredential.Read(directory, new Uri(url).Port)["Bearer ".Length..];
+        var sessionUrl = url + "/session?token=" + credential + "&overlay=";
         var foreground = OperatingSystem.IsWindows() ? GetForegroundWindow() : 0;
         HideOnUi();
         if (OperatingSystem.IsLinux() && request.CoordinateScale != 1) request = request with { Width = (int)Math.Round(request.Width / request.CoordinateScale), Height = (int)Math.Round(request.Height / request.CoordinateScale), Unit = request.Unit / request.CoordinateScale, CoordinateScale = 1 };
@@ -26,7 +28,7 @@ internal sealed class NativeOverlay(PhotinoWindow parent, string url, string dir
         if (OperatingSystem.IsLinux())
         {
             var payload = JsonSerializer.Serialize(new { kind = request.Kind, result = request.Result, unit = request.Unit, boxes = boxes.Select(b => new[] { b.X - left, b.Y - top, b.Width, b.Height }) }, J.Options);
-            var code = LinuxShow(url + "/overlay.html?bridge=native", payload, left, top, width, height, request.Seconds, request.Backend == "layer-shell" ? 1 : request.Backend == "x11" ? 2 : 0);
+            var code = LinuxShow(sessionUrl + "native", payload, left, top, width, height, request.Seconds, request.Backend == "layer-shell" ? 1 : request.Backend == "x11" ? 2 : 0);
             if (code != 0) reportError(code == -3 ? "This compositor cannot host the selected overlay backend. Use an X11 session or a layer-shell compositor." : "Linux overlay could not be created (" + code + ").");
             return;
         }
@@ -53,7 +55,7 @@ internal sealed class NativeOverlay(PhotinoWindow parent, string url, string dir
                 boxes = boxes.Select(b => new[] { b.X - left, b.Y - top, b.Width, b.Height }) }, J.Options));
             timer = new(); _ = Expire(window, Math.Clamp(request.Seconds, 3, 300), timer.Token);
         });
-        window.Load(url + "/overlay.html?bridge=photino"); window.WaitForClose();
+        window.Load(sessionUrl + "photino"); window.WaitForClose();
     }
     private async Task Expire(PhotinoWindow window, int seconds, CancellationToken cancellation)
     { try { await Task.Delay(TimeSpan.FromSeconds(seconds), cancellation); parent.Invoke(() => { if (overlay == window) HideOnUi(); }); } catch (OperationCanceledException) { } }

@@ -10,7 +10,7 @@ Managed tests live in `tests/WarframeCompanion.Tests`; native tests live in `tes
 
 ## Performance checks
 
-Run `python tools/benchmark-api.py --url http://127.0.0.1:8642 --output artifacts/latency.json` against an isolated, populated instance. It warms each route and reports median/p95 latency and payload size, without exporting account content. Compare identical data, edition and background load. A live game can materially change timing; API latency is not a game frame-time measurement.
+Run `python tools/benchmark-api.py --url http://127.0.0.1:8642 --data-dir PATH_TO_ISOLATED_PROFILE --output artifacts/latency.json` against an isolated, populated instance. It warms each route and reports median/p95 latency and payload size, without exporting account content. Compare identical data, edition and background load. A live game can materially change timing; API latency is not a game frame-time measurement.
 
 Crafting uses are indexed once per catalog load, then looked up by item ID. Cached thumbnails bypass the network download queue. Account summaries reuse their already-read snapshot. Avoid process-wide caches of mutable account data unless invalidation and account isolation are covered by tests.
 

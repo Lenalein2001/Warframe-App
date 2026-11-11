@@ -18,6 +18,11 @@ namespace {
 constexpr std::size_t mib = 1024 * 1024;
 constexpr char marker[] = "\"LastInventorySync\"";
 constexpr std::size_t marker_size = sizeof(marker) - 1;
+// Volatile stores prevent the compiler from eliminating cleanup of raw game bytes.
+struct SensitiveBuffer : std::vector<std::uint8_t> {
+    explicit SensitiveBuffer(std::size_t size) : std::vector<std::uint8_t>(size) {}
+    ~SensitiveBuffer() { volatile std::uint8_t* p = data(); for (std::size_t i = 0; i < size(); ++i) p[i] = 0; }
+};
 struct Region { std::uint64_t start, size; };
 
 // Owns only a read-only process handle; never changes process protections or data.
@@ -62,7 +67,7 @@ public:
         return actual > 0 ? static_cast<std::size_t>(actual) : 0;
 #endif
     }
-    std::vector<Region> regions() const {
+    template<typename Continue> std::vector<Region> regions(Continue keepGoing) const {
         std::vector<Region> result;
         auto append = [&result](std::uint64_t start, std::uint64_t size) {
             if (!size || start + size < start) return;
@@ -72,7 +77,7 @@ public:
 #ifdef _WIN32
         MEMORY_BASIC_INFORMATION info{};
         std::uint64_t address = 0;
-        while (VirtualQueryEx(handle, reinterpret_cast<const void*>(address), &info, sizeof(info))) {
+        while (keepGoing() && VirtualQueryEx(handle, reinterpret_cast<const void*>(address), &info, sizeof(info))) {
             const auto start = reinterpret_cast<std::uint64_t>(info.BaseAddress);
             const auto size = static_cast<std::uint64_t>(info.RegionSize);
             if (!size || start + size <= address) break;
@@ -82,7 +87,7 @@ public:
 #else
         std::ifstream maps("/proc/" + std::to_string(pid) + "/maps");
         std::string line;
-        while (std::getline(maps, line)) {
+        while (keepGoing() && std::getline(maps, line)) {
             std::istringstream fields(line);
             std::string range, permissions;
             if (!(fields >> range >> permissions) || permissions.substr(0, 2) != "rw") continue;
@@ -128,6 +133,7 @@ int wfc_file_identity(const char* path, std::uint64_t* device, std::uint64_t* fi
 int wfc_scan_memory(int pid, wfc_memory_candidate candidate, wfc_memory_progress progress, void* context) noexcept {
     if (pid <= 0 || !candidate || !progress) return -2;
     try {
+        if (!progress(0, context)) return 1;
         ProcessReader process(pid);
         if (!process.valid()) return -1;
         const auto started = std::chrono::steady_clock::now();
@@ -137,8 +143,8 @@ int wfc_scan_memory(int pid, wfc_memory_candidate candidate, wfc_memory_progress
             return scanned >= 32ULL * 1024 * mib || std::chrono::steady_clock::now() - started >= std::chrono::seconds(45) ? 2 : 0;
         };
         if (const int state = status()) return state;
-        std::vector<std::uint8_t> buffer(4 * mib + marker_size), blob(32 * mib);
-        for (const auto& region : process.regions()) {
+        SensitiveBuffer buffer(4 * mib + marker_size), blob(32 * mib);
+        for (const auto& region : process.regions([&]() { return status() == 0; })) {
             const auto end = region.start + region.size;
             for (auto cursor = region.start; cursor < end;) {
                 if (const int state = status()) return state;
@@ -153,6 +159,8 @@ int wfc_scan_memory(int pid, wfc_memory_candidate candidate, wfc_memory_progress
                     const auto address = cursor + offset + static_cast<std::size_t>(hit);
                     const auto begin = address - std::min<std::uint64_t>(address - region.start, 8 * mib);
                     const auto got = process.read(begin, blob.data(), static_cast<std::size_t>(std::min<std::uint64_t>(blob.size(), end - begin)));
+                    scanned += got;
+                    if (const int state = status()) return state;
                     const auto at = static_cast<std::size_t>(address - begin);
                     if (got >= at + marker_size && std::equal(marker, marker + marker_size, blob.data() + at)) {
                         auto first = at;

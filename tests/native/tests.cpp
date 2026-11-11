@@ -43,6 +43,7 @@ static void memory_test() {
     const auto result = wfc_scan_memory(pid, candidate, progress, &found);
     std::cout << "Process reader fixture: status " << result << ", found " << found << std::endl;
     check(result == 1 && found);
+    check(std::memcmp(allocation.data() + 1, fixture, std::strlen(fixture)) == 0);
     const auto cancel = [](std::uint64_t, void*) -> int { return 0; };
     check(wfc_scan_memory(pid, candidate, cancel, &found) == 1);
     check(wfc_scan_memory(-1, candidate, progress, &found) == -2);

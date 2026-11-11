@@ -13,6 +13,7 @@ public sealed partial class CompanionRuntime
     private JsonNode? lastSuccessfulScan;
     private Task? gameLoop;
     private Task? memoryScan;
+    private CancellationTokenSource? memoryCancellation;
     private Task? automaticProfile;
     private double nextMemory;
     private double lastMemory;
@@ -73,14 +74,14 @@ public sealed partial class CompanionRuntime
             playingKey = known.Key;
             known.Name = GameLog.PlayerName(pending.Name) ?? known.Name;
             RepairAccountNames();
-            gameSession++;
+            gameSession++; memoryCancellation?.Cancel();
             Interlocked.Increment(ref rewardGeneration);
             lastSuccessfulScan = null; ScanError = null; memoryRequested = true;
             SaveRegistry(registry);
         }
         else
         {
-            LinkLogAccount(pending, id); gameSession++; memoryRequested = true; SaveRegistry(registry);
+            LinkLogAccount(pending, id); gameSession++; memoryCancellation?.Cancel(); memoryRequested = true; SaveRegistry(registry);
         }
     }
     private void LogSignal(LogSignal signal)
@@ -89,7 +90,7 @@ public sealed partial class CompanionRuntime
         {
             if (signal.Kind == "login")
             {
-                gameSession++;
+                gameSession++; memoryCancellation?.Cancel();
                 var next = JsonSerializer.Deserialize<RegistryState>(JsonSerializer.Serialize(registry, J.Options), J.Options)!;
                 var matches = next.Accounts.Where(a => string.Equals(GameLog.PlayerName(a.Name), GameLog.PlayerName(signal.Value), StringComparison.OrdinalIgnoreCase) && (signal.Id == null || a.Id == null || a.Id == signal.Id)).ToArray();
                 var provisional = matches.Where(a => a.Id == null).ToArray();
@@ -143,7 +144,7 @@ public sealed partial class CompanionRuntime
                 {
                     if (GameProcess != detected)
                     {
-                        GameProcess = detected; gameSession++; memoryRequested = detected != null;
+                        GameProcess = detected; gameSession++; memoryCancellation?.Cancel(); memoryRequested = detected != null;
                         playingKey = null; lastSuccessfulScan = null; ScanError = null;
                     }
                 }
@@ -197,15 +198,19 @@ public sealed partial class CompanionRuntime
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InventoryException or JsonException or HttpRequestException)
         { Event("Public profile refresh: " + (e is InventoryException ? e.Message : e.GetType().Name), "error"); }
     }
-    private async Task CaptureMemory(int pid, CancellationToken cancellation)
+    internal Func<int, string, CancellationToken, Func<MemoryCapture, bool>, MemoryCapture> ReadMemory { get; set; } = (pid, account, cancellation, acceptable) => MemoryProvider.Scan(pid, account, cancellation, acceptable);
+    internal async Task CaptureMemory(int pid, CancellationToken cancellation)
     {
         string key, identity; long session; Dictionary<string, long> known; string[] migratedSections;
         lock (sync)
         {
             var account = registry.Accounts.FirstOrDefault(a => a.Key == playingKey);
+            if (!J.B(settings["memory_scan_enabled"])) return;
             if (account == null) { ScanError = "Waiting for the game log to identify the logged-in account."; return; }
             key = account.Key; identity = account.Id ?? key; session = gameSession; known = account.Profile?.Xp ?? snapshots.Current(identity)?.Xp ?? [];
             migratedSections = account.ExpectedMemorySections;
+            memoryCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            cancellation = memoryCancellation.Token;
         }
         ScanRunning = true;
         try
@@ -213,11 +218,13 @@ public sealed partial class CompanionRuntime
             var baseline = (store.Read<string[]>("memory-sections-" + key) ?? []).Union(migratedSections).ToArray();
             var watch = System.Diagnostics.Stopwatch.StartNew();
             bool Accept(MemoryCapture reading) => (reading.Snapshot.IdentityVerified || LegacyMigration.SameOwner(reading.Snapshot.Xp, known) == true) && new[] { "MiscItems", "Suits", "Recipes", "XPInfo" }.Concat(baseline).All(reading.Sections.Contains);
-            var capture = await Task.Run(() => MemoryProvider.Scan(pid, identity, cancellation, Accept), cancellation);
+            var capture = await Task.Run(() => ReadMemory(pid, identity, cancellation, Accept), cancellation);
             var owns = capture.Snapshot.IdentityVerified || LegacyMigration.SameOwner(capture.Snapshot.Xp, known) == true;
             var complete = Accept(capture);
             lock (sync)
             {
+                cancellation.ThrowIfCancellationRequested();
+                if (!J.B(settings["memory_scan_enabled"])) return;
                 var currentAccount = registry.Accounts.FirstOrDefault(a => a.Key == key);
                 if (playingKey != key || GameProcess != pid || gameSession != session || (currentAccount?.Id ?? currentAccount?.Key) != identity)
                 { ScanError = "Game session or account identity changed during capture; reading discarded."; memoryRequested = true; return; }
@@ -228,8 +235,9 @@ public sealed partial class CompanionRuntime
                 Event(result.Reason, result.Promoted ? "info" : "error");
             }
         }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception e) when (!cancellation.IsCancellationRequested && e is IOException or InventoryException or UnauthorizedAccessException)
         { ScanError = e is InventoryException ? e.Message : "Game memory was not readable; confirmed inventory retained."; }
-        finally { ScanRunning = false; }
+        finally { lock (sync) { ScanRunning = false; memoryCancellation?.Dispose(); memoryCancellation = null; } }
     }
 }

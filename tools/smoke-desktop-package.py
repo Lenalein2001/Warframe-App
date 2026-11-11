@@ -15,7 +15,7 @@ packages = pathlib.Path(sys.argv[1]).resolve()
 def request(port, route, body=None):
     payload = None if body is None else json.dumps(body).encode()
     req = urllib.request.Request(f'http://127.0.0.1:{port}/{route}', data=payload,
-                                 headers={'Content-Type': 'application/json'})
+                                 headers={'Content-Type': 'application/json', 'Authorization': (data / f'api-{port}.auth').read_text().removeprefix('Authorization: ').strip() if (data / f'api-{port}.auth').exists() else ''})
     with urllib.request.urlopen(req, timeout=5) as response:
         return json.load(response) if route.startswith('api/') else response.read()
 

@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix='wfc-linux-') as temporary:
     def request(route, body=None):
         payload = None if body is None else json.dumps(body).encode()
         req = urllib.request.Request(f'http://127.0.0.1:{port}/api/{route}', data=payload,
-                                     headers={'Content-Type': 'application/json'})
+                                     headers={'Content-Type': 'application/json', 'Authorization': (root / 'data' / f'api-{port}.auth').read_text().removeprefix('Authorization: ').strip() if (root / 'data' / f'api-{port}.auth').exists() else ''})
         with local_http.open(req, timeout=10) as response:
             return json.load(response)
     def wait_for(check, description, seconds=60):
