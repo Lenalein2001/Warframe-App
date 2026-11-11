@@ -246,7 +246,8 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
             case "overlay/test": await TestOverlay(cancellation); break;
             case "notifications/test":
                 if (NotificationRequested is not { } notificationHandler) throw new InventoryException("Open the desktop app to test notifications.");
-                notificationHandler("Warframe Companion", "Notifications are ready. Foundry builds, watched fissures and reward reminders will appear here.");
+                try { notificationHandler("Warframe Companion", "Notifications are ready. Foundry builds, watched fissures and reward reminders will appear here."); }
+                catch (IOException) { throw new InventoryException("The desktop notification service could not accept the notification. Check that it is available and try again."); }
                 break;
             case "hotkeys/register": return RegisterHotkeys?.Invoke() ?? throw new InventoryException("Open the desktop app to register hotkeys.");
             case "manual/count":

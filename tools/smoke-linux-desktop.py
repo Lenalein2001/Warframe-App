@@ -36,8 +36,7 @@ with tempfile.TemporaryDirectory(prefix='wfc-linux-') as temporary:
         app = subprocess.Popen([str(executable), '--offline', '--no-game', '--data-dir', str(root / 'data'), '--port', str(port)], stdout=output, stderr=output)
         try:
             wait_for(lambda: request('state').get('desktop'), 'GTK desktop startup')
-            windows = subprocess.check_output(['xwininfo', '-root', '-tree'], text=True)
-            assert 'Warframe App' in windows, windows
+            wait_for(lambda: 'Warframe App' in subprocess.check_output(['xwininfo', '-root', '-tree'], text=True), 'mapped GTK window')
             request('settings', {'screenshot_tool': 'scrot', 'overlay_backend': 'x11'})
             request('notifications/test', {})
             # Move the visible notification into history, then inspect the daemon's payload.

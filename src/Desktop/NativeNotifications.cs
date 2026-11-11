@@ -20,7 +20,8 @@ internal sealed class NativeNotifications : IDisposable
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!queue.TryAdd((title, body, completion))) throw new IOException("Notification queue is full.");
-        completion.Task.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+        try { completion.Task.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult(); }
+        catch (TimeoutException e) { throw new IOException("The desktop notification service did not respond.", e); }
     }
     private void Work()
     {
