@@ -2,103 +2,111 @@
 
 # Warframe Companion
 
-**Inventory, mastery, crafting and mission rewards in one desktop app.**
+Inventory, mastery, crafting and mission rewards in one desktop app.
 
 [![Validation](https://github.com/Lenalein2001/Warframe-App/actions/workflows/companion.yml/badge.svg?branch=senpai)](https://github.com/Lenalein2001/Warframe-App/actions/workflows/companion.yml)
-[![Windows packages](https://github.com/Lenalein2001/Warframe-App/actions/workflows/windows.yml/badge.svg?branch=senpai)](https://github.com/Lenalein2001/Warframe-App/actions/workflows/windows.yml)
+[![Windows](https://github.com/Lenalein2001/Warframe-App/actions/workflows/windows.yml/badge.svg?branch=senpai)](https://github.com/Lenalein2001/Warframe-App/actions/workflows/windows.yml)
+[![Linux](https://github.com/Lenalein2001/Warframe-App/actions/workflows/linux.yml/badge.svg?branch=senpai)](https://github.com/Lenalein2001/Warframe-App/actions/workflows/linux.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-7bb6b1.svg)](LICENSE)
 
-[Features](#features) · [Get the app](#get-the-app) · [Build](docs/DEVELOPMENT.md) · [Validation](docs/migration/VALIDATION.md)
+[Download](https://github.com/Lenalein2001/Warframe-App/releases/latest) · [Usage](docs/USAGE.md) · [Development](docs/DEVELOPMENT.md) · [Report a bug](https://github.com/Lenalein2001/Warframe-App/issues)
 
 </div>
 
-A C# desktop host and application services, with C/C++ for process reading, image processing and export decoding. The established interface is retained, with focused additions for inventory review. Existing accounts, settings and inventory migrate without modifying the original files.
+Warframe Companion brings collection progress, crafting information and reward comparisons together without leaving your desktop. It runs on Windows and Linux, with separate accounts, persistent settings and optional in-game overlays.
 
 ## Features
 
-| Area | What it does |
+| | |
 | --- | --- |
-| **Inventory** | Search stacks and equipment; filter weapons, mastery and crafting uses. Open an item to see what consumes it and follow recipe chains. |
-| **Mastery & collection** | Track equipment mastery, prime sets, relics, missing parts and pinned items. |
-| **Crafting & farming** | Review foundry jobs, materials, drop locations and saved farming plans. |
-| **Mission rewards** | Recognize relic rewards, compare market values and show an in-game overlay. |
-| **Rivens & markets** | Grade rolls, decode explicit fingerprints and look up market prices. |
-| **World & standing** | Browse fissures, cycles, events, syndicates and available offers. |
-| **Accounts & storage** | Keep accounts isolated, retain history and reject stale or incomplete inventory replacements. |
+| **Inventory** | Search equipment and resources, filter by mastery and trading status, and see which recipes consume an item. |
+| **Collections** | Track mastery, prime sets, relics, missing parts and pinned items. |
+| **Crafting and farming** | Review foundry jobs, required materials, drop locations and saved farming plans. |
+| **Relic rewards** | Compare recognized rewards, ownership and market values in an overlay. |
+| **Rivens and markets** | Grade rolls, decode explicit riven fingerprints and look up market prices. |
+| **World and standing** | Browse fissures, cycles, events, syndicates and offers. |
+| **Desktop integration** | Receive native notifications and use shortcuts for common actions. |
 
-### Keep weapons needed for crafting
+### Review mastered weapons
 
-In **Inventory**, combine **Weapons**, **Mastered** and **No known crafting uses**, or use the one-click review button. Weapons consumed by another recipe remain marked even when the resulting weapon has already been mastered.
+The inventory's **Review mastered weapons** filter shows mastered weapons with no known consuming recipes. Open an item to inspect its crafting uses, required quantities, target ownership and mastery, then follow the recipe chain.
+
+Recipe information reflects the loaded catalog. Mastery is account-wide; individual copies, upgrades and loadouts still matter. The app never sells items for you.
+
+## Installation
+
+Download packages from [GitHub Releases](https://github.com/Lenalein2001/Warframe-App/releases/latest). All published builds target **x86-64**.
+
+### Windows
+
+- **Installer:** run `WarframeCompanion-win-x64-Setup.exe` for a per-user installation and Start menu shortcut.
+- **Portable:** extract the self-contained ZIP and run `Portable.cmd` to store data beside the app. Run `WarframeCompanion.Desktop.exe` instead to use your normal user profile.
+- **Smaller download:** the framework-dependent ZIP requires the .NET 10 and ASP.NET Core 10 runtimes. The self-contained edition includes them.
+
+Windows requires WebView2. Both editions include the English OCR fallback. The framework-dependent ZIP is approximately 13 MB; the self-contained ZIP is approximately 63 MB.
+
+### Linux
+
+The native Linux app runs alongside Warframe through Steam/Proton; the companion itself does not need Proton.
+
+**Ubuntu 24.04 / Linux Mint 22:** install the Debian package with dependency resolution:
+
+```sh
+sudo apt install ./WarframeCompanion-linux-x64.deb
+warframe-companion
+```
+
+**Portable:** extract `WarframeCompanion-linux-x64-portable.tar.gz` into a writable folder and run `./Portable.sh`. The .NET runtime is included; GTK 3, WebKitGTK 4.1, GTK Layer Shell, libnotify, fontconfig, ICU, OpenSSL and English Tesseract must be supplied by your distribution. Screenshot tools depend on the session: scrot/maim for X11, Spectacle for KDE, GNOME Screenshot for GNOME, or grim for wlroots compositors.
+
+**Nix:** use `nix-build` and launch `./result/bin/WarframeCompanion.Desktop`. See [development](docs/DEVELOPMENT.md) for details.
+
+Ubuntu and Nix desktop startup, notifications and X11 overlays are tested in CI. Live Warframe under Proton and the Wayland compositor matrix remain unverified. Wayland screenshot permissions and overlay support vary by desktop; the main app remains available when an overlay is unsupported.
+
+## Data and recognition
+
+Settings and account data are stored outside the installation directory by default:
+
+| Platform | Location |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%\WarframeCompanion` |
+| Linux | `$XDG_DATA_HOME/WarframeCompanion`, or `~/.local/share/WarframeCompanion` |
+| Portable | `data/` beside the executable |
+
+Updates and uninstallers preserve user data. Back up the data folder before moving profiles between machines. Existing legacy data is copied on first normal startup without changing the original files.
+
+Inventory data comes from public exports, profiles, logs, imports and optional read-only process capture. Memory capture is disabled by default. Reward choices and on-screen riven cards use OCR when a reliable direct source is unavailable. The app does not modify or inject into the game process.
+
+See [usage](docs/USAGE.md) for account setup, notifications and command-line options.
+
+## Architecture and development
+
+C# handles application services, persistence and the desktop host. C/C++ handles process reading, image processing and export decoding. The interface uses local HTML, CSS and JavaScript in the system webview.
 
 ```mermaid
 flowchart LR
-    A[Owned weapon] --> B{Mastered?}
-    B -->|No| C[Keep leveling]
-    B -->|Yes| D{Known consuming recipes?}
-    D -->|Yes| E[Review targets and quantities]
-    D -->|No| F[Review before selling in-game]
-    D -->|Data unavailable| G[Refresh recipe data]
+    G[Game data and public sources] --> S[C# services]
+    N[C/C++ processing] --> S
+    S <--> D[(SQLite)]
+    S --> U[Desktop interface]
+    S --> O[Overlays and notifications]
 ```
-
-“No known crafting uses” describes the loaded recipes, not a sale recommendation. Mastery is account-wide; upgrades, loadouts and individual copies still matter. The companion never sells items.
-
-## Get the app
-
-Current builds are in the **WarframeCompanion-win-x64** artifact of a successful [Windows packages run](https://github.com/Lenalein2001/Warframe-App/actions/workflows/windows.yml?query=branch%3Asenpai). GitHub requires sign-in to download workflow artifacts. Historical releases may contain the previous app; a final replacement release has not yet been published.
-
-| Windows package | Choose it when |
-| --- | --- |
-| **Setup.exe** | You want a per-user installation, Start menu entry and uninstaller. |
-| **Self-contained ZIP** | You want the .NET runtimes included. |
-| **Framework-dependent ZIP** | .NET 10 and ASP.NET Core 10 are already installed. |
-
-All editions require WebView2 and include the OCR fallback. Run the executable for normal storage or `Portable.cmd` for data beside the app. See [usage](docs/USAGE.md).
-
-A minimal native OCR build reduces the framework-dependent ZIP to approximately **12 MiB**, and the self-contained ZIP to **60 MiB**, while retaining the original LSTM model and dictionaries. The launcher is about 159 KiB; most package space is runtime libraries and OCR data. Exact measurements and test conditions are in [validation](docs/migration/VALIDATION.md).
-
-## Data flow
-
-```mermaid
-flowchart LR
-    P[Public exports and profiles] --> S[C# services]
-    L[Game logs and imports] --> S
-    N[C/C++ native processing] --> S
-    S <--> DB[(SQLite snapshots and settings)]
-    S --> H[Local HTTP host]
-    H --> UI[Desktop interface]
-    S --> O[Reward and riven overlays]
-```
-
-Inventory capture prioritizes public data, logs, imports and optional read-only memory access. Reward choices and on-screen riven cards retain OCR where a reliable direct source is unavailable. Memory capture is disabled by default. The app does not modify or inject into the game process.
-
-## Development
 
 ```text
-src/          C# projects and native C/C++ libraries
-web/          Desktop interface assets
-tests/        Managed integration and native regression tests
-packaging/    Windows installer and Linux desktop integration
-tools/        Build, packaging, verification and benchmarking scripts
-docs/         Usage, development and validation notes
+src/          C# projects and C/C++ libraries
+web/          Interface assets
+tests/       Maintained regression and integration tests
+packaging/    Windows and Linux installation files
+tools/        Build, packaging and verification scripts
+docs/         Usage and development documentation
 licenses/     Third-party notices
 ```
 
-Windows requires .NET SDK 10, Visual Studio C++ Build Tools with CMake, and WebView2.
+Build instructions and test commands are in [DEVELOPMENT.md](docs/DEVELOPMENT.md). Bug reports should include the app version, operating system, reproduction steps and relevant errors. Remove account identifiers and private data from logs before sharing them.
 
-```powershell
-./tools/build-native.ps1
-dotnet build WarframeCompanion.slnx -c Release -p:RestoreLockedMode=true
-dotnet run --project tests/WarframeCompanion.Tests -c Release
-python tools/migration-contracts.py --check
-dotnet run --project src/Desktop -c Release
-```
+## License and acknowledgements
 
-Linux supports source builds through `./run.sh` and Nix through `default.nix`. See [development instructions](docs/DEVELOPMENT.md) for dependencies, CLI commands, packaging and benchmarks.
+[MIT](LICENSE). Third-party license notices are included in [licenses](licenses/) and the distributed packages. This project builds on the original [Warframe-App](https://github.com/Diskutabell/Warframe-App) interface and functionality.
 
-Windows and Ubuntu builds, native tests and the Nix package are checked in CI. Windows packages also undergo startup, restart, install, upgrade and uninstall checks. Linux desktop/compositor behavior and all live-game lifecycle combinations remain separate manual checks.
+Warframe is a trademark of Digital Extremes. This is an independent community project and is not affiliated with or endorsed by Digital Extremes.
 
-## Credits & license
 
-Derived from [Diskutabell/Warframe-App](https://github.com/Diskutabell/Warframe-App), retaining its interface and functionality. Data comes from Digital Extremes and community projects including WFCD and warframe.market. Third-party notices are in [licenses](licenses).
-
-An independent fan project, not affiliated with Digital Extremes. Distributed under the [MIT license](LICENSE). See [CHANGELOG](CHANGELOG.md) for historical release notes.

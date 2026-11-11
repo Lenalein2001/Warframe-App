@@ -28,7 +28,15 @@ export const app = {
   /** Re-renders the current page (after a change made in the drawer, say). */
   refresh: () => go(true),
   /** Runs `fn` every `ms` while the current page is shown. */
-  every(fn, ms) { this.timers.push(setInterval(fn, ms)); },
+  every(fn, ms) {
+    let busy = false;
+    this.timers.push(setInterval(async () => {
+      if (document.hidden || busy) return;
+      busy = true;
+      try { await fn(); } catch (e) { console.error("Page refresh:", e); }
+      finally { busy = false; }
+    }, ms));
+  },
 };
 
 function route() {
@@ -117,7 +125,7 @@ function renderRail() {
 }
 
 // ------------------------------------------------------------------ a newer version
-// The engine asks GitHub once when it starts (update.rs); the popup shows once per window.
+// The engine asks GitHub once when it starts; the popup shows once per window.
 
 let updateShown = false;
 
@@ -167,7 +175,12 @@ function showUpdate(u) {
 // A click beside the box closes it too.
 $("#update").addEventListener("click", (e) => { if (e.target.id === "update") closeUpdate(); });
 
-async function poll() {
+let polling = null;
+function poll() {
+  return polling ??= pollOnce().finally(() => { polling = null; });
+}
+
+async function pollOnce() {
   try {
     app.state = await api("state");
   } catch {
@@ -240,6 +253,7 @@ document.addEventListener("keydown", (e) => {
 // a stutter. Wheel clicks glide here instead: each adds to where the scroll is heading, and the
 // view eases there over a few frames. Touchpads send many small steps and keep the native path.
 const glide = new Map();
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 function step(el) {
   const g = glide.get(el);
   const left = g.target - el.scrollTop;
@@ -251,7 +265,7 @@ function step(el) {
   requestAnimationFrame(() => step(el));
 }
 document.addEventListener("wheel", (e) => {
-  if (e.ctrlKey || e.shiftKey || Math.abs(e.deltaY) < 30 || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+  if (reducedMotion.matches || e.ctrlKey || e.shiftKey || Math.abs(e.deltaY) < 30 || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
   const el = e.target.closest("#view, .drawer, .palette-results, #nav, .acct-menu");
   if (!el || el.scrollHeight <= el.clientHeight) return;
   e.preventDefault();
@@ -272,4 +286,5 @@ window.addEventListener("wfp:changed", () => { app.refresh(); poll(); });
 window.addEventListener("wfp:account", async () => { await poll(); go(true); });
 hydrateIcons(document.body);
 poll().then(() => go());
-setInterval(poll, 5000);
+setInterval(() => { if (!document.hidden) poll(); }, 5000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });

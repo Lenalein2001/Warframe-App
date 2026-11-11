@@ -1,7 +1,7 @@
 """Check preserved interface and route contracts without the retired backend."""
 import hashlib, json, pathlib, re
 root = pathlib.Path(__file__).resolve().parents[1]
-manifest = json.loads((root / 'docs/migration/contracts.json').read_text())
+manifest = json.loads((root / 'tests/ui-contracts.json').read_text())
 def digest(path):
     data = path.read_bytes()
     if path.suffix in {'.js','.css','.html','.txt'}: data = data.replace(b'\r\n', b'\n')
