@@ -151,6 +151,22 @@ public static class IntegrationTests
             }
             finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
         }));
+        test("Delayed account identity starts automatic profile refresh without waiting an interval", () => InDirectory(directory =>
+        {
+            var path = Path.Combine(directory, "EE.log"); File.WriteAllText(path, "Sys [Info]: Logged in Fixture\n");
+            var store = new StateStore(Path.Combine(directory, "state.sqlite"));
+            var settings = Settings.Defaults(); settings["ee_log_path"] = path; settings["profile_auto_refresh"] = true;
+            settings["memory_scan_enabled"] = false; settings["ocr_enabled"] = false; store.Write("settings", settings);
+            var handler = new PendingProfileHandler(); var runtime = new CompanionRuntime(directory, false, false, handler);
+            try
+            {
+                runtime.StartGameWatcher();
+                Check(!handler.Called, "Unlinked account requested a public profile");
+                File.AppendAllText(path, "AccountId: 0123456789abcdef01234567\n");
+                Check(SpinWait.SpinUntil(() => handler.Called, TimeSpan.FromSeconds(8)), "Late account identity consumed the refresh interval before any request");
+            }
+            finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
         test("Slow public profiles do not delay game log detection", () => InDirectory(directory =>
         {
             var path = Path.Combine(directory, "EE.log"); File.WriteAllText(path, "Sys [Info]: Logged in Fixture\n");

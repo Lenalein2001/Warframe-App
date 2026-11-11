@@ -171,8 +171,15 @@ public sealed partial class CompanionRuntime
                 }
                 if (!Offline && J.B(config["profile_auto_refresh"]) && J.Now >= nextAutoProfile && (automaticProfile == null || automaticProfile.IsCompleted))
                 {
-                    nextAutoProfile = J.Now + Math.Max(1, J.N(config, "profile_refresh_minutes", 30)) * 60;
-                    if (Active?.Id != null) automaticProfile = RefreshAutomaticProfile();
+                    lock (sync)
+                    {
+                        // Waiting for account detection must not consume the refresh interval.
+                        if (Active?.Id != null)
+                        {
+                            nextAutoProfile = J.Now + Math.Max(1, J.N(config, "profile_refresh_minutes", 30)) * 60;
+                            automaticProfile = RefreshAutomaticProfile();
+                        }
+                    }
                 }
             }
             catch (OperationCanceledException) when (stop.IsCancellationRequested) { break; }
