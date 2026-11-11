@@ -2,10 +2,11 @@
 
 Extract the entire archive before starting.
 
-- **Windows:** double-click `Start Warframe Companion.cmd`.
+- **Windows:** double-click `Start Warframe Companion.exe`.
 - **Linux:** run `./Portable.sh`. Native GTK/WebKit and OCR dependencies must be installed; see `app/README.md`.
 - **app/** contains the program, libraries and licenses. Keep these files together.
-- **data/** is created beside the launcher on first start. It contains your portable settings, accounts and inventory.
+- **Windows profile:** a fresh extracted package uses the same settings, accounts and inventory as the installed app. If `data/state.sqlite` already exists beside the launcher, that existing portable profile is used instead. To create a separate portable profile, run the launcher with `--portable`. No profiles are merged or overwritten.
+- **Linux profile:** `Portable.sh` uses the adjacent `data/` folder.
 
 To update, close the companion and replace `app/` and the launcher with the new version. Keep `data/` untouched.
 

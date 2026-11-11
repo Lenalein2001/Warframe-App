@@ -74,7 +74,14 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
         Rivens.SetPlatform(J.S(settings, "platform") ?? "pc");
     }
     public JsonObject GetSettings() { lock (sync) return (JsonObject)settings.DeepClone(); }
-    public void Start(bool watchGame = true) { RewardScreenOpened += StartAutomaticOcr; RewardScreenClosed += CloseRewards; background ??= Background(); if (watchGame) StartGameWatcher(); }
+    public void Start(bool watchGame = true)
+    {
+        RewardScreenOpened += StartAutomaticOcr; RewardScreenClosed += CloseRewards;
+        background ??= Task.Run(Background);
+        // Cached catalog parsing and historical log replay can run synchronously
+        // before their first await. Keep both off the desktop startup thread.
+        if (watchGame) gameLoop ??= Task.Run(GameLoop);
+    }
     internal void StartGameWatcher() => gameLoop ??= GameLoop();
     private async Task Background()
     {

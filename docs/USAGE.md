@@ -1,6 +1,6 @@
 # Warframe Companion
 
-Launch `WarframeCompanion.Desktop.exe` for normal per-user storage, or `Start Warframe Companion.cmd` in a portable package to keep settings and data in its `data/` folder. Windows requires WebView2. The framework-dependent edition also requires the .NET 10 and ASP.NET Core 10 runtimes; the self-contained edition includes them.
+Launch `WarframeCompanion.Desktop.exe` for normal per-user storage, or `Start Warframe Companion.exe` in an extracted Windows package. The launcher reuses existing `data/state.sqlite` portable storage when present; otherwise it shares the installed profile. Pass `--portable` to explicitly create separate portable storage. Windows requires WebView2. The framework-dependent edition also requires the .NET 10 and ASP.NET Core 10 runtimes; the self-contained edition includes them.
 
 ## Inventory and crafting uses
 

@@ -40,7 +40,7 @@ Download packages from [GitHub Releases](https://github.com/Lenalein2001/Warfram
 ### Windows
 
 - **Installer:** run `WarframeCompanion-win-x64-Setup.exe` for a per-user installation and Start menu shortcut.
-- **Portable:** extract the self-contained ZIP and run `Start Warframe Companion.cmd`. Program files stay in `app/`; portable settings and inventory stay in `data/` beside the launcher.
+- **Portable:** extract the self-contained ZIP and run `Start Warframe Companion.exe`. Program files stay in `app/`. A fresh copy shares your installed profile; an existing `data/` profile stays portable. Use `--portable` to create separate portable storage.
 - **Smaller download:** the framework-dependent ZIP requires the .NET 10 and ASP.NET Core 10 runtimes. The self-contained edition includes them.
 
 Windows requires WebView2. Both editions include the English OCR fallback. The framework-dependent ZIP is approximately 13 MB; the self-contained ZIP is approximately 63 MB.

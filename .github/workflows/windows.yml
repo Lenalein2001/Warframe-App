@@ -21,6 +21,8 @@ jobs:
         shell: pwsh
         run: |
           ./tools/publish-companion.ps1 -TesseractRoot "$PWD/artifacts/ocr"
+          python tests/launcher.test.py src/Native/build/Release
+          if ($LASTEXITCODE -ne 0) { throw 'Native launcher tests failed.' }
           $env:PATH = "$PWD/artifacts/ocr;$env:PATH"
           $env:TESSDATA_PREFIX = "$PWD/artifacts/ocr/tessdata"
           dotnet run --project tests/WarframeCompanion.Tests -c Release -- --ocr

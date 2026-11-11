@@ -113,6 +113,23 @@ public static class IntegrationTests
             Check(updated.Text.StartsWith("-- User configuration", StringComparison.Ordinal) && updated.Text.EndsWith("-- User footer\n", StringComparison.Ordinal) && !updated.Text.Contains("hl.bind"), "Disabling keys changed user configuration");
             try { CompositorBindings.MergeLua("-- >>> warframeproject hotkeys (managed)", []); throw new Exception("Broken managed block accepted"); } catch (InventoryException) { }
         });
+        test("Desktop startup does not wait for historical game log processing", () => InDirectory(directory =>
+        {
+            var path = Path.Combine(directory, "EE.log"); File.WriteAllText(path, "Sys [Info]: Logged in Fixture\n");
+            var store = new StateStore(Path.Combine(directory, "state.sqlite"));
+            var settings = Settings.Defaults(); settings["ee_log_path"] = path;
+            settings["memory_scan_enabled"] = false; settings["ocr_enabled"] = false; store.Write("settings", settings);
+            using var entered = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
+            var runtime = new CompanionRuntime(directory, true);
+            runtime.Log.Signal += signal => { if (signal.Kind == "login") { entered.Set(); release.Wait(TimeSpan.FromSeconds(10)); } };
+            var started = Task.Run(() => runtime.Start());
+            try
+            {
+                Check(entered.Wait(TimeSpan.FromSeconds(5)), "Historical log processing did not start");
+                Check(started.Wait(TimeSpan.FromSeconds(2)), "Historical log processing blocked desktop startup");
+            }
+            finally { release.Set(); started.GetAwaiter().GetResult(); runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
         test("Public profile timeout does not stop game log monitoring", () => InDirectory(directory =>
         {
             var path = Path.Combine(directory, "EE.log"); File.WriteAllText(path, "Sys [Info]: Logged in Fixture\n");
@@ -203,7 +220,9 @@ public static class IntegrationTests
                 var runtime = new CompanionRuntime(directory, true);
                 try
                 {
-                    runtime.Start(); var saved = store.Read<RegistryState>("registry")!;
+                    runtime.Start();
+                    Check(SpinWait.SpinUntil(() => store.Read<RegistryState>("registry")!.Accounts.Any(a => a.Badge == 17), TimeSpan.FromSeconds(8)), "Log identity processing did not finish");
+                    var saved = store.Read<RegistryState>("registry")!;
                     var active = saved.Accounts.Single(a => a.Badge == 17);
                     if (scenario is "incidental" or "ambiguous") Check(active.Id == null, "Unproven identity was assigned in " + scenario);
                     else Check(active.Id == firstId, "Known identity was lost in " + scenario);
@@ -266,6 +285,7 @@ public static class IntegrationTests
             try
             {
                 runtime.Start();
+                Check(SpinWait.SpinUntil(() => store.Read<RegistryState>("registry")!.Accounts.Any(a => a.Key == "game" && a.Id != null), TimeSpan.FromSeconds(8)), "Log identity processing did not finish");
                 var state = runtime.Get("state", new Dictionary<string, string>());
                 Check(J.S(state["account"], "key") == "view", "Historical login overwrote the selected account");
                 var game = J.A(state, "accounts").Single(a => J.S(a, "key") == "game");
