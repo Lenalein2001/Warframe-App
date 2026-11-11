@@ -1,4 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
   <ItemGroup><ProjectReference Include="../../src/Services/Services.csproj" /><ProjectReference Include="../../src/Host/Host.csproj" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="../../web/fonts/SourceSans3-Variable.ttf" LogicalName="OcrTestFont.ttf" /></ItemGroup>
 </Project>

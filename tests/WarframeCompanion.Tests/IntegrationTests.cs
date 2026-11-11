@@ -247,11 +247,14 @@ public static class IntegrationTests
             Check(ScreenCapture.Which("tesseract") != null, "Tesseract and English data are required for --ocr");
             using var bitmap = new SkiaSharp.SKBitmap(1000, 300, SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Opaque);
             using var canvas = new SkiaSharp.SKCanvas(bitmap); canvas.Clear(SkiaSharp.SKColors.Black);
-            using var typeface = SkiaSharp.SKTypeface.FromFamilyName(OperatingSystem.IsWindows() ? "Arial" : "DejaVu Sans"); using var font = new SkiaSharp.SKFont(typeface, 38);
+            // NoDependencies Skia has no system-font lookup on Linux. Use the shipped font
+            // so the fixture contains actual glyphs on every platform.
+            using var fontStream = typeof(IntegrationTests).Assembly.GetManifestResourceStream("OcrTestFont.ttf")!;
+            using var typeface = SkiaSharp.SKTypeface.FromStream(fontStream); using var font = new SkiaSharp.SKFont(typeface, 38);
             using var paint = new SkiaSharp.SKPaint { Color = SkiaSharp.SKColors.White, IsAntialias = true };
             canvas.DrawText("Ash Prime Systems Blueprint", 20, 60, SkiaSharp.SKTextAlign.Left, font, paint);
             var text = ScreenCapture.Text(bitmap, new(0, 0, 1000, 100), 6, 0, CancellationToken.None).GetAwaiter().GetResult();
-            Check(OcrReader.Match(text, ["Ash Prime Systems Blueprint", "Braton Prime Barrel"]).Name == "Ash Prime Systems Blueprint", "Reward image was not recognized");
+            Check(OcrReader.Match(text, ["Ash Prime Systems Blueprint", "Braton Prime Barrel"]).Name == "Ash Prime Systems Blueprint", "Reward image was not recognized: " + text);
             Check(bitmap.GetPixel(0, 0) == SkiaSharp.SKColors.Black, "Preprocessing mutated original frame");
             canvas.Clear(SkiaSharp.SKColors.Black); var lines = new[] { "Boltor Visi", "+165% Damage", "+120% Critical Chance", "-45% Zoom" };
             for (var i = 0; i < lines.Length; i++) canvas.DrawText(lines[i], 20, 55 + i * 60, SkiaSharp.SKTextAlign.Left, font, paint);
