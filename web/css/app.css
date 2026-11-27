@@ -533,6 +533,16 @@ details.more summary:hover { color: var(--text); }
 .inv-meta { display: flex; gap: 10px; align-items: baseline; font-size: 12.5px; }
 .inv-kind { color: var(--faint); }
 .inv-count { font: 700 20px/1 var(--display); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.inventory-tabs a[aria-current="page"] { color: var(--gold-2); border-color: var(--gold); }
+.inventory-table { overflow-x: auto; }
+.inventory-table table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.inventory-table th, .inventory-table td { padding: 8px 12px; text-align: right; border-bottom: 1px solid var(--line); }
+.inventory-table th:first-child, .inventory-table td:first-child { text-align: left; }
+.inventory-table small { display: block; color: var(--faint); }
+.inventory-table form { display: inline-flex; gap: 6px; }
+.inventory-table input { width: 6em; }
+.reward-choice { display: inline-flex; align-items: center; gap: 3px; }
+.reward-choice [aria-pressed="true"] { color: var(--gold-2); border-color: var(--gold); }
 
 /* Resource rows (recipes, farming totals): the resource's own icon and how far along it is. */
 .res-row { align-items: center; }

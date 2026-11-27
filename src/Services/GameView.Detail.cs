@@ -25,6 +25,11 @@ public sealed partial class GameView
             var uid = J.S(row, "uid") ?? (key.StartsWith("lookup:", StringComparison.Ordinal) ? key[7..] : null);
             if (uid != null)
             {
+                if (J.S(row, "kind") == "item" && BuildOffer(uid) is { } build)
+                {
+                    row["build"] = J.Node(build);
+                    if (build.Pending && BuildOffer(uid, another: true) is { } another) row["anotherBuild"] = J.Node(another);
+                }
                 row["craftingKnown"] = Catalog.RecipesAvailable;
                 row["craftingUses"] = J.Array((Catalog.CraftingUses.GetValueOrDefault(uid) ?? []).Select(use => new {
                     uid = use.Uid, name = use.Name, count = use.Count, image = Catalog.ImageFor(use.Uid),

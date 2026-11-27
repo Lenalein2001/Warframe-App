@@ -1,0 +1,28 @@
+{
+  "version": "4fc39abee71eb43a",
+  "url": "https://github.com/Lenalein2001/Warframe-App/releases/download/v0.2.1/WarframeCompanion-OCR-win-x64.zip",
+  "bytes": 5006632,
+  "sha256": "4fc39abee71eb43aa84f532093292573dd14289cd5b32650507faaa147355d24",
+  "files": {
+    "tesseract.exe": {
+      "bytes": 4304384,
+      "sha256": "81244cccf7cc236864e79f4b278f5be9798931e62ef175f93e5a4f5c25ff95f3"
+    },
+    "tessdata/eng.traineddata": {
+      "bytes": 5199090,
+      "sha256": "906538558589e563fad743a10a7c4d4e041112c9d546b3f648ad42ad703e679f"
+    },
+    "licenses/BUILD.txt": {
+      "bytes": 183,
+      "sha256": "883a6ee283be912a8c63210fa3744de1dce619184d906a2d28f03bfe461edbdd"
+    },
+    "licenses/Leptonica.txt": {
+      "bytes": 1521,
+      "sha256": "87829abb5bbb00b55a107365da89e9a33f86c4250169e5a1e5588505be7d5806"
+    },
+    "licenses/Tesseract.txt": {
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    }
+  }
+}

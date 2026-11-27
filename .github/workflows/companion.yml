@@ -1,7 +1,7 @@
 name: CSharp and native validation
 on:
   push:
-    paths: ['src/**', 'tests/**', 'web/**', 'tools/**', 'nix/**', '*.nix', '*.props', '*.slnx', 'run.sh', 'docs/migration/contracts.json', '.github/workflows/**']
+    paths: ['src/**', 'tests/**', 'web/**', 'tools/**', 'nix/**', '*.nix', '*.props', 'VERSION', '*.slnx', 'run.sh', 'docs/migration/contracts.json', '.github/workflows/**']
   pull_request:
   workflow_dispatch:
 permissions:

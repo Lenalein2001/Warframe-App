@@ -26,7 +26,7 @@ internal static class DesktopCommands
             else if ((key is "--data-dir" or "--port" || command == "replay" && key is "--scale" or "--output") && i + 1 < args.Length) options[key] = args[++i];
             else throw new ArgumentException("Unsupported command option.");
         }
-        var directory = Path.GetFullPath(options.GetValueOrDefault("--data-dir") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WarframeCompanion"));
+        var directory = Path.GetFullPath(options.GetValueOrDefault("--data-dir") ?? DesktopPaths.DefaultDirectory());
         if (command != "replay")
         {
             var saved = File.Exists(Path.Combine(directory, "state.sqlite")) ? new StateStore(Path.Combine(directory, "state.sqlite")).Read<JsonObject>("settings") : null;

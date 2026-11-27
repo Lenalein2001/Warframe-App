@@ -64,7 +64,8 @@ function bountiesCard(w) {
 function duviriCard(w) {
   const d = w.duviri;
   const tile = (x) => `<div class="pick ${x.owned ? "" : "unowned"}">${art(x.image)}<span>${esc(x.name)}</span>
-      ${!x.owned ? `<em class="warn-text">not owned</em>` : x.mastered ? `<em class="good">mastered</em>` : ""}</div>`;
+      ${!x.owned ? `<em class="warn-text">not owned</em>` : x.mastered ? `<em class="good">mastered</em>` : ""}
+      ${x.onBoard ? `<a class="pill lotus" href="#farming?item=${encodeURIComponent("task:" + x.uid)}">Farming goal</a>` : ""}</div>`;
   const rolled = d?.rolled ? new Date(d.rolled * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
   const mine = d?.groups?.length
     ? `${d.groups.map((g) => `<div class="sublabel">${esc(g.slot)}</div><div class="picks compact">${g.picks.map(tile).join("")}</div>`).join("")}
@@ -75,11 +76,14 @@ function duviriCard(w) {
         into its log, and they show here. Seeing them in the star chart takes Opportunity rank 4.</p>`;
   const circuit = (w.circuit || []).map((c) => `<div class="sublabel">${c.steel ? "Steel Path · Incarnon adapters" : "Normal · Warframe parts"}</div>
     <div class="picks compact">${c.choices.map((x) => `<div class="pick">${art(x.image)}<span>${esc(x.name)}</span></div>`).join("")}</div>`).join("");
+  const reset = w.resets?.weekly;
+  const resetTime = reset && new Date(reset).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
   return `<div class="card"><div class="card-head"><h2>Duviri</h2></div>
     <div class="duviri-head">Your picks in Teshin's Cave</div>
     ${mine}
-    ${circuit ? `<div class="duviri-circuit"><div class="row duviri-head"><span class="grow">The Circuit's rewards this week</span>
-      <span class="muted">${countdown(w.resets?.weekly)}</span></div>${circuit}</div>` : ""}</div>`;
+    <div class="duviri-circuit"><div class="duviri-head">Weekly Circuit rewards</div>
+      ${resetTime ? `<p class="muted">Resets <time datetime="${esc(reset)}">${esc(resetTime)}</time> · ${countdown(reset)}</p>` : ""}
+      ${circuit || '<span class="muted">Rotation unavailable.</span>'}</div></div>`;
 }
 
 /** When an hour of the schedule starts, in local time: "14:00", or "Tue 14:00" on another day. */
@@ -190,7 +194,7 @@ function darvoCard(d) {
 }
 
 function render(w) {
-  if (!w || (w.error && !w.cycles)) return `<div class="callout">${esc(w?.error || "World state unavailable.")}</div>`;
+  if (!w || (w.error && !w.cycles)) return `<div class="callout">${esc(w?.error || "World state unavailable.")}</div>${w ? duviriCard(w) : ""}`;
   return `
     <div class="cycles scenic" style="margin-bottom:16px">${(w.cycles || []).map((c) => cycleTile(c)).join("")}</div>
     <div class="grid cols-3">${baroCard(w.baro || {})}${sortieCard(w.sortie)}${archonCard(w.archon)}</div>

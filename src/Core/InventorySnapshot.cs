@@ -4,7 +4,11 @@ using System.Text.Json.Serialization;
 namespace WarframeCompanion.Core;
 
 public sealed record Equipment(long Count, long Xp);
-public sealed record FoundryJob(string Recipe, double? Done);
+public sealed record FoundryJob(string Recipe, double? Done)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? InstanceId { get; init; }
+}
 public sealed record Currencies(long? Platinum, long? Credits, long? Endo, long? Ducats);
 public sealed record Affiliation(long Standing, long Title);
 public sealed record Progress(Dictionary<string, long> Nodes, Dictionary<string, long> Intrinsics);
@@ -18,7 +22,13 @@ public sealed record InventorySnapshot(
     Dictionary<string, long> Counts, Dictionary<string, Equipment> Equipment,
     Dictionary<string, long> Xp, Dictionary<string, List<long>>? Upgrades,
     FoundryJob[] Foundry, Currencies Currencies, long Mods, long? MasteryRank,
-    Progress? Progress, Standing? Standing);
+    Progress? Progress, Standing? Standing)
+{
+    // Empty arrays distinguish a captured, empty optional section from an omitted one.
+    // Older snapshots predate this evidence.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, HashSet<string>>? OptionalQuantitySections { get; init; }
+}
 
 public static class SnapshotJson
 {

@@ -23,22 +23,29 @@ public sealed class CompanionServer : IAsyncDisposable
     private Action? clearCredential;
     private FileStream? profileLease;
     private CompanionServer(WebApplication app, CompanionRuntime runtime, string url) { this.app = app; Runtime = runtime; Url = url; }
-    public static async Task<CompanionServer> Start(string directory, bool offline = false, int? port = null, CancellationToken cancellation = default, bool migrateLegacy = false, bool watchGame = true, bool deferRuntimeStart = false)
+    public static async Task<CompanionServer> Start(string directory, bool offline = false, int? port = null, CancellationToken cancellation = default, bool migrateLegacy = false, bool watchGame = true, bool deferRuntimeStart = false, Action<string>? startupStage = null)
     {
+        startupStage?.Invoke("profile-lock-start");
         var lease = ProfileInstance.Acquire(directory);
-        try { return await StartOwned(directory, offline, port, cancellation, migrateLegacy, watchGame, lease, deferRuntimeStart); }
+        startupStage?.Invoke("profile-lock-ready");
+        try { return await StartOwned(directory, offline, port, cancellation, migrateLegacy, watchGame, lease, deferRuntimeStart, startupStage); }
         catch { lease.Dispose(); throw; }
     }
-    private static async Task<CompanionServer> StartOwned(string directory, bool offline, int? port, CancellationToken cancellation, bool migrateLegacy, bool watchGame, FileStream lease, bool deferRuntimeStart)
+    private static async Task<CompanionServer> StartOwned(string directory, bool offline, int? port, CancellationToken cancellation, bool migrateLegacy, bool watchGame, FileStream lease, bool deferRuntimeStart, Action<string>? startupStage)
     {
+        startupStage?.Invoke("runtime-services-start");
         var runtime = new CompanionRuntime(directory, offline, migrateLegacy); var selectedPort = port ?? (int)J.N(runtime.GetSettings(), "port", 8642);
         if (selectedPort is < 1024 or > 65535) throw new ArgumentOutOfRangeException(nameof(port));
+        startupStage?.Invoke("runtime-services-ready");
         var url = "http://127.0.0.1:" + selectedPort;
         var token = LocalApiCredential.Create();
         var cookie = "wfc-session-" + selectedPort;
+        startupStage?.Invoke("webhost-builder-start");
         var builder = WebApplication.CreateSlimBuilder(); builder.Logging.ClearProviders();
         builder.WebHost.ConfigureKestrel(k => { k.Listen(IPAddress.Loopback, selectedPort); k.Limits.MaxRequestBodySize = InventoryParser.MaxBytes; k.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(10); });
+        startupStage?.Invoke("webhost-builder-ready");
         var app = builder.Build(); runtime.QuitRequested += () => app.Lifetime.StopApplication();
+        startupStage?.Invoke("webhost-built");
         var assembly = typeof(CompanionServer).Assembly;
         var assets = assembly.GetManifestResourceNames().Where(n => n.StartsWith("web/", StringComparison.Ordinal)).ToDictionary(n => n[4..].Replace('\\', '/'), n => n, StringComparer.Ordinal);
         var types = new FileExtensionContentTypeProvider(); types.Mappings[".ttf"] = "font/ttf";
@@ -108,7 +115,10 @@ public sealed class CompanionServer : IAsyncDisposable
         });
         try
         {
-            await app.StartAsync(cancellation); LocalApiCredential.Write(directory, selectedPort, token);
+            startupStage?.Invoke("listener-start");
+            await app.StartAsync(cancellation);
+            startupStage?.Invoke("listener-ready");
+            LocalApiCredential.Write(directory, selectedPort, token);
             if (!deferRuntimeStart) runtime.Start(watchGame);
             return new(app, runtime, url) {
                 profileLease = lease,

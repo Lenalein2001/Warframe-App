@@ -14,6 +14,7 @@ public sealed class ManualState
     public Dictionary<string, double> Mastered { get; set; } = [];
     public List<string> Pinned { get; set; } = [];
     public List<FarmingTask> Tasks { get; set; } = [];
+    public Dictionary<string, int> KeepCopies { get; set; } = [];
 }
 public sealed record Profile(string? Name, string? Id, long? MasteryRank, Dictionary<string, long> Xp, Progress? Progress, Standing? Standing, double Fetched, string Source);
 public sealed class AccountState

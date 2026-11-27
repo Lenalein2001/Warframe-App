@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using Microsoft.Win32.SafeHandles;
 using SkiaSharp;
 
 namespace WarframeCompanion.Services;
@@ -13,6 +14,13 @@ public static class NativeEngine
     }
     [DllImport("warframe_native", EntryPoint = "wfc_file_identity", CallingConvention = CallingConvention.Cdecl)]
     private static extern int FileIdentityNative([MarshalAs(UnmanagedType.LPUTF8Str)] string path, out ulong device, out ulong file);
+    internal static (ulong Device, ulong File) FileIdentity(SafeFileHandle handle)
+    {
+        if (OpenFileIdentity(handle, out var device, out var file) != 1) throw new IOException("Cannot identify the open game log.");
+        return (device, file);
+    }
+    [DllImport("warframe_native", EntryPoint = "wfc_open_file_identity", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int OpenFileIdentity(SafeFileHandle handle, out ulong device, out ulong file);
     static NativeEngine() { if (Version() != 1) throw new IOException("Native engine ABI does not match the application."); }
     public static byte[] Unlzma(byte[] input)
     {

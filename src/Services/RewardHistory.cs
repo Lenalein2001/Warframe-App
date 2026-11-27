@@ -32,21 +32,38 @@ public sealed class RewardHistory(StateStore store)
     }
     public void Record(JsonNode result, string? account)
     {
-        var drops = J.A(result, "items").Where(i => J.S(i, "uid") != null).Select(i => new { name = J.S(i, "name"), uid = J.S(i, "uid"), price = J.Get(i, "price"), ducats = J.Get(i, "ducats"), needed = J.N(i, "needed") > 0 || J.B(J.Get(i, "needed")) }).ToArray();
+        var drops = J.A(result, "items").Where(i => J.S(i, "uid") != null).Select(i => new { name = J.S(i, "name"), uid = J.S(i, "uid"), inventoryUid = J.S(i, "inventoryUid"), price = J.Get(i, "price"), ducats = J.Get(i, "ducats"), needed = J.N(i, "needed") > 0 || J.B(J.Get(i, "needed")) }).ToArray();
         if (drops.Length == 0) return;
         lock (sync)
         {
-            var entry = J.Node(new { t = J.Now, drops, best = J.S(result, "best"), account }); var next = (JsonArray)Entries.DeepClone();
-            if (next.LastOrDefault() is { } last && J.Now - (J.D(last["t"]) ?? 0) < 20 && J.S(last, "account") == account && J.A(last, "drops").Select(x => J.S(x, "name")).SequenceEqual(drops.Select(d => d.name))) next.RemoveAt(next.Count - 1);
-            next.Add(entry); while (next.Count > 300) next.RemoveAt(0); store.Write("reward-history", next); Entries = next;
+            var next = (JsonArray)Entries.DeepClone();
+            var time = J.D(result["t"]) ?? J.Now;
+            var screen = J.S(result, "screenId");
+            var existing = next.LastOrDefault(e => J.S(e, "account") == account &&
+                (screen != null ? J.S(e, "id") == screen : J.D(e?["t"]) == time));
+            if (existing == null && screen == null && next.LastOrDefault() is { } last && J.S(last, "account") == account &&
+                time - J.D(last["t"]) is >= 0 and < 20 && J.A(last, "drops").Select(x => J.S(x, "uid")).SequenceEqual(drops.Select(d => d.uid))) existing = last;
+            var id = existing == null ? screen ?? Guid.NewGuid().ToString("N") : Id(existing);
+            var entry = J.Node(new { id, t = J.D(existing?["t"]) ?? time, drops, best = J.S(result, "best"), account });
+            if (existing == null) next.Add(entry); else next[next.IndexOf(existing)] = entry;
+            while (next.Count > 300) next.RemoveAt(0);
+            store.Write("reward-history", next); Entries = next;
         }
+    }
+    private static string Id(JsonNode row) => J.S(row, "id") ?? "legacy-" + BitConverter.DoubleToInt64Bits(J.D(row["t"]) ?? 0).ToString("X16");
+
+    public JsonNode? Screen(string account, string id)
+    {
+        lock (sync) return Entries.OfType<JsonNode>().FirstOrDefault(e => J.S(e, "account") == account && Id(e) == id)?.DeepClone();
     }
     public JsonNode Read(string? account, double since)
     {
         lock (sync)
         {
-            var rows = Entries.Where(e => account == null || J.S(e, "account") == null || J.S(e, "account") == account).ToArray(); var session = rows.Where(e => J.D(e?["t"]) >= since).ToArray();
-            return J.Node(new { entries = rows.Reverse().Take(40), session = new { since, screens = session.Length, bestValue = session.Sum(e => J.A(e, "drops").Select(d => J.N(d, "price")).DefaultIfEmpty().Max()) } });
+            var rows = Entries.Where(e => J.S(e, "account") == null || J.S(e, "account") == account).ToArray(); var session = rows.Where(e => J.D(e?["t"]) >= since).ToArray();
+            var result = J.Node(new { entries = rows.Reverse().Take(40), session = new { since, screens = session.Length, bestValue = session.Sum(e => J.A(e, "drops").Select(d => J.N(d, "price")).DefaultIfEmpty().Max()) } });
+            foreach (var row in J.A(result, "entries")) row["id"] = Id(row);
+            return result;
         }
     }
 }

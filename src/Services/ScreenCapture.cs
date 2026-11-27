@@ -60,9 +60,9 @@ public static class ScreenCapture
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }
-    public static async Task<string> Text(SKBitmap bitmap, SKRectI rectangle, int mode, int variant, CancellationToken cancellation)
+    public static async Task<string> Text(SKBitmap bitmap, SKRectI rectangle, int mode, int variant, CancellationToken cancellation, string? executable = null)
     {
-        var tesseract = Which("tesseract") ?? throw new InventoryException("Tesseract is not installed. Install English Tesseract OCR or place it in tools/tesseract.");
+        var tesseract = executable ?? Which("tesseract") ?? throw new InventoryException("Install the optional OCR files in Settings to read the screen.");
         rectangle.Intersect(new SKRectI(0, 0, bitmap.Width, bitmap.Height)); if (rectangle.Width < 2 || rectangle.Height < 2) throw new InventoryException("OCR crop lies outside the screenshot.");
         using var crop = new SKBitmap(); if (!bitmap.ExtractSubset(crop, rectangle)) throw new InventoryException("OCR crop failed.");
         using var prepared = crop.Copy(SKColorType.Bgra8888); NativeEngine.Prepare(prepared, variant);
@@ -75,7 +75,9 @@ public static class ScreenCapture
                 await file.WriteAsync(System.Text.Encoding.ASCII.GetBytes(FormattableString.Invariant($"P6\n{scaled.Width} {scaled.Height}\n255\n")), cancellation);
                 await file.WriteAsync(NativeEngine.Rgb(scaled), cancellation);
             }
-            return await Run(tesseract, [path, "stdout", "-l", "eng", "--oem", "1", "--psm", mode.ToString(System.Globalization.CultureInfo.InvariantCulture)], cancellation); }
+            var data = Path.Combine(Path.GetDirectoryName(tesseract)!, "tessdata");
+            string[] dataArgs = File.Exists(Path.Combine(data, "eng.traineddata")) ? ["--tessdata-dir", data] : [];
+            return await Run(tesseract, [path, "stdout", ..dataArgs, "-l", "eng", "--oem", "1", "--psm", mode.ToString(System.Globalization.CultureInfo.InvariantCulture)], cancellation); }
         finally { if (File.Exists(path)) File.Delete(path); }
     }
     private static CapturedScreen Windows()

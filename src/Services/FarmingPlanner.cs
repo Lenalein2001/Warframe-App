@@ -94,6 +94,13 @@ public sealed class FarmingPlanner(GameView view)
     public JsonNode Board(bool summary = false)
     {
         var rows = view.Manual.Tasks.Select(Row).ToArray(); var done = rows.Count(r => J.S(r, "state") == "done");
+        if (view.CaveRoll is { } roll)
+        {
+            var offered = J.A(roll, "offers").Select(p => J.S(p, "uid")).ToHashSet();
+            var freshness = WorldService.CaveFreshness(J.D(roll["rolled"]), view.SpiralStart, view.SpiralEnd, J.Now);
+            foreach (var row in rows)
+                if (offered.Contains(J.S(row, "uid"))) row["cave"] = freshness;
+        }
         var sig = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(J.Array(rows).ToJsonString())))[..16].ToLowerInvariant();
         return summary ? J.Node(new { total = rows.Length, done, sig }) : J.Node(new { tasks = rows, done, sig, inventoryKnown = view.Inventory != null, ranksKnown = view.Inventory?.Upgrades != null });
     }

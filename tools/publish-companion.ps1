@@ -1,13 +1,15 @@
 param(
     [ValidateSet('win-x64', 'linux-x64')][string]$Runtime = 'win-x64',
-    [string]$TesseractRoot
+    [string]$OutputDirectory,
+    [string]$TesseractRoot,
+    [switch]$IncludeOcr
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $project = Join-Path $repoRoot 'src/Desktop/Desktop.csproj'
 if ($Runtime.StartsWith('win-')) {
     if (!$IsWindows) { throw 'Build Windows desktop packages on Windows.' }
-    if (!$TesseractRoot -or !(Test-Path -LiteralPath (Join-Path $TesseractRoot 'tesseract.exe')) -or !(Test-Path -LiteralPath (Join-Path $TesseractRoot 'tessdata/eng.traineddata')) -or !(Test-Path -LiteralPath (Join-Path $TesseractRoot 'licenses'))) { throw 'Supply -TesseractRoot with the complete OCR bundle, English data and licenses.' }
+    if ($IncludeOcr -and (!$TesseractRoot -or !(Test-Path -LiteralPath (Join-Path $TesseractRoot 'tesseract.exe')) -or !(Test-Path -LiteralPath (Join-Path $TesseractRoot 'tessdata/eng.traineddata')) -or !(Test-Path -LiteralPath (Join-Path $TesseractRoot 'licenses')))) { throw 'Supply -TesseractRoot with the complete OCR bundle, English data and licenses.' }
     & (Join-Path $PSScriptRoot 'build-native.ps1')
 } else {
     if (!$IsLinux) { throw 'Build Linux desktop packages on Linux so native libraries match the target.' }
@@ -17,7 +19,8 @@ if ($Runtime.StartsWith('win-')) {
     if ($LASTEXITCODE -ne 0) { throw 'Native build failed.' }
 }
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
-$outputRoot = Join-Path $repoRoot "artifacts/companion-$Runtime-$stamp"
+$outputRoot = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $repoRoot "artifacts/companion-$Runtime-$stamp" }
+if (Test-Path -LiteralPath $outputRoot) { throw "Package output already exists: $outputRoot" }
 New-Item -ItemType Directory -Path $outputRoot | Out-Null
 $measurements = @()
 $selfContained = $false
@@ -31,7 +34,7 @@ if ($LASTEXITCODE -ne 0) { throw "Publishing $edition failed." }
 Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/USAGE.md') -Destination (Join-Path $destination 'README.md')
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination $destination
 Copy-Item -LiteralPath (Join-Path $repoRoot 'licenses') -Destination $destination -Recurse
-if ($Runtime.StartsWith('win-')) {
+if ($Runtime.StartsWith('win-') -and $IncludeOcr) {
     New-Item -ItemType Directory -Path (Join-Path $destination 'tools') | Out-Null
     Copy-Item -LiteralPath $TesseractRoot -Destination (Join-Path $destination 'tools/tesseract') -Recurse
 }

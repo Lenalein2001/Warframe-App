@@ -1,9 +1,10 @@
 // Settings: where the data comes from, and how the app behaves. Every control saves on change.
 
-import { $, act, ago, api, countdown, esc, fmt, pickJson, toast } from "../lib.js";
+import { $, act, ago, api, esc, fmt, pickJson, toast } from "../lib.js";
 import { gimg, ICON, mrBadge } from "../game.js";
 
 let s = {};
+let readingMemory = false;
 
 const dot = (cls) => `<span class="dot ${cls}"></span>`;
 const SOURCE = { saved: "linked earlier", "EE.log": "read from EE.log", "entered by you": "entered by you", Settings: "set in Settings", "DE profile": "from its profile" };
@@ -37,7 +38,7 @@ function sources(S) {
       src.inventory.source ? `${fmt(src.inventory.stacks)} stacks · ${esc(src.inventory.source)} · ${ago(src.inventory.imported)}` : "None - parts, relics, currencies and medallions need one (memory scan or an inventory.json).",
       `<button data-act="inventory">Import file</button>${src.inventory.source ? `<button data-act="forget" class="ghost">Forget</button>` : ""}`)}
     ${row(tools.tesseract && tools.screenshot ? "on" : "warn", "Screen reader",
-      `${tools.tesseract ? "tesseract" : `<span class="warn-text">tesseract missing${S.os === "windows" ? " - install it with <code>winget install UB-Mannheim.TesseractOCR</code>, then restart the app" : ""}</span>`} · ${tools.screenshot ? esc(tools.screenshot) : `<span class="warn-text">no screenshot tool</span>`}`)}
+      `${tools.tesseract ? "tesseract" : `<span class="warn-text">OCR not installed</span>`} · ${tools.screenshot ? esc(tools.screenshot) : `<span class="warn-text">no screenshot tool</span>`}`)}
     ${row(src.market.error ? "warn" : "on", "warframe.market", src.market.error ? esc(src.market.error) : `Live${src.market.queued ? ` · ${src.market.queued} prices queued` : ""}`)}
   </div>`;
 }
@@ -79,17 +80,18 @@ function accounts(S) {
 function memscan(S) {
   const m = S.sources.memscan || {};
   const last = m.last ? `Last read ${ago(m.last.t)}: ${fmt(m.last.stacks)} stacks in ${m.last.seconds}s.` : "";
-  const next = m.next ? ` Next read in ${countdown(m.next, "a moment")}.` : "";
   const line = {
     off: [dot(""), "Off."],
-    unavailable: [dot("warn"), esc(m.detail || "Not possible on this system.")],
-    idle: [dot(""), (esc(m.detail || "Waiting for the game.")) + next],
-    scanning: [dot("gold"), `Reading… ${Math.round((m.progress || 0) * 100)}%`],
-    ok: [dot("on"), `${last}${m.detail ? ` ${esc(m.detail)}` : ""}${next}`],
-    error: [dot("warn"), `<span class="warn-text">${esc(m.detail || "Failed.")}</span>${next}`],
-  }[m.state] || [dot(""), esc(m.state || "")];
-  return `<div class="row" style="align-items:flex-start;padding:10px 12px;border-radius:6px;background:var(--bg-2);border:1px solid var(--line)">
-    <span style="margin-top:7px">${line[0]}</span><span>${line[1]}</span></div>`;
+    idle: [dot(""), m.canRead ? "Ready." : "Waiting for the logged-in account."],
+    scanning: [dot("gold"), "Reading inventory..."],
+    ok: [dot("on"), last],
+    error: [dot("warn"), esc(m.detail || "Read failed.")],
+  }[m.state] || [dot(""), ""];
+  return `<div class="row" style="padding:10px 0">
+    ${line[0]}<span>${line[1]}</span>
+    ${m.enabled ? `<button id="readMemory" ${!m.canRead || m.running || readingMemory ? "disabled" : ""}>Read inventory once</button>` : ""}
+  </div>`;
+
 }
 
 // ------------------------------------------------------------------ page
@@ -111,8 +113,8 @@ export default {
       ${section("Sources", `<div id="sources">${sources(S)}</div>`)}
 
       ${section("Memory scan", `
-        <p class="muted" style="margin:0 0 6px">Reads the inventory the game has already downloaded - parts, relics, currencies, the foundry - straight from its memory, read-only, and keeps nothing else. It runs by itself after you log in and after each mission, because that is when the game holds the whole inventory. Nothing is sent anywhere. Third-party tools are used at your own risk.</p>
-        ${toggle("memory_scan_enabled", "Read the inventory from game memory", "Off by default.")}
+        <p class="muted">Refreshes inventory after login and mission syncs. You can also read once on demand or import inventory JSON above.</p>
+        ${toggle("memory_scan_enabled", "Read inventory from game memory", "Off by default. Use at your own risk.")}
         <div id="memscan">${memscan(S)}</div>`)}
 
       ${section("Notifications", `
@@ -124,6 +126,7 @@ export default {
         ${toggle("notify", "Every reward screen", "The overlay already shows the prices; this adds a desktop notification.")}`)}
 
       ${section("Reward screen and riven overlays", `
+        <div id="ocrSetup">${ocrSetup(tools)}</div>
         ${toggle("ocr_enabled", "Read the reward screen when it opens", "Triggered by the game log; the hotkey below works any time.")}
         ${toggle("overlay_enabled", "Show prices over the game", "A panel under each reward card, gone when the reward screen closes. Clicks pass through to the game.")}
         ${select("overlay_position", "Price panels", "Above the cards leaves the row under them in view, where it shows what the squad picks.", [["below", "Under the cards"], ["above", "Above the cards"]])}
@@ -168,7 +171,7 @@ export default {
         toast("Saved");
         if (k === "memory_scan_enabled") {
           const S2 = await api("state").catch(() => null);
-          if (S2 && $("#memscan")) $("#memscan").innerHTML = memscan(S2);
+          if (S2) updateMemoryScan(S2);
         }
         if (k.startsWith("hotkey_")) showKeys();
       });
@@ -190,6 +193,8 @@ export default {
       await act("data/reload", {}, "Game data downloaded again");
       e.target.disabled = false;
     };
+    wireOcr();
+    updateMemoryScan(S);
     const test = $("#testOverlay");
     if (test) test.onclick = () => act("overlay/test");
     const notification = $("#testNotification");
@@ -198,15 +203,20 @@ export default {
       try { await act("notifications/test", {}, "Sent to your desktop notification service"); }
       finally { notification.disabled = false; }
     };
+    const legal = document.createElement("p");
+    legal.className = "muted";
+    legal.innerHTML = '<a href="/licenses.html">Licenses</a>';
+    view.append(legal);
     wireSources(view);
     wireAccounts($("#accounts"));
   },
 
   onState(S) {
     if (!$("#memscan")) return;
-    $("#memscan").innerHTML = memscan(S);
+    updateMemoryScan(S);
     $("#sources").innerHTML = sources(S);
     wireSources($("#sources"));
+    if ($("#ocrSetup")) { $("#ocrSetup").innerHTML = ocrSetup(S.sources.tools || {}); wireOcr(); }
     // Leave the account forms alone while someone is typing in one.
     if (!document.activeElement?.classList.contains("acc-id")) {
       $("#accounts").innerHTML = accounts(S);
@@ -258,4 +268,48 @@ function wireSources(root) {
   on("[data-act=profileFile]", async () => { const j = await pickJson(); if (j) act("profile/import", j, "Profile imported"); });
   on("[data-act=inventory]", async () => { const j = await pickJson(); if (j) act("inventory/import", j, "Inventory imported"); });
   on("[data-act=forget]", () => act("inventory/clear", {}, "Inventory forgotten"));
+}
+
+function ocrSetup(tools) {
+  if (tools.tesseract) return '<p class="muted">Screen scanning is ready.</p>';
+  const ocr = tools.ocr || {};
+  if (!ocr.supported) return '<p class="muted">Screen scanning needs Tesseract with English language data from your Linux software manager.</p>';
+  const busy = ocr.phase && ocr.phase !== "idle";
+  const label = busy ? (ocr.phase === "downloading" ? `Downloading ${Math.min(100, Math.round(100 * ocr.received / ocr.bytes))}%` : "Installing...") : "Download and install OCR";
+  return `<p class="muted">Screen scanning and overlays need an optional ${(ocr.bytes / 1000000).toFixed(1)} MB download.</p><button id="installOcr" ${busy ? "disabled" : ""}>${label}</button>`;
+}
+function wireOcr() {
+  const button = $("#installOcr");
+  if (!button) return;
+  button.onclick = async () => {
+    button.disabled = true;
+    button.textContent = "Downloading...";
+    await act("ocr/install", {}, "OCR installed. Screen scanning is ready.");
+    const state = await api("state").catch(() => null);
+    if (state && $("#ocrSetup")) { $("#ocrSetup").innerHTML = ocrSetup(state.sources.tools || {}); wireOcr(); }
+    else { button.disabled = false; button.textContent = "Retry OCR installation"; }
+  };
+}
+
+
+function updateMemoryScan(state) {
+  const container = $("#memscan");
+  if (!container) return;
+  container.innerHTML = memscan(state);
+  const button = $("#readMemory");
+  if (!button) return;
+  button.onclick = async () => {
+    if (readingMemory) return;
+    readingMemory = true;
+    button.disabled = true;
+    try {
+      const result = await act("memory/read");
+      if (result?.error) toast(result.error, true);
+    } finally {
+      readingMemory = false;
+      const latest = await api("state").catch(() => null);
+      if (latest) updateMemoryScan(latest);
+      else button.disabled = false;
+    }
+  };
 }

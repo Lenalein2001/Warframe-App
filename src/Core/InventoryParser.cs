@@ -67,23 +67,37 @@ public static class InventoryParser
         if (!verified) warnings.Add("Account identity is caller-selected; this payload does not verify ownership.");
         if (!complete) warnings.Add("Partial observation; confirmed inventory will not be replaced.");
         var counts = new Dictionary<string, long>(StringComparer.Ordinal);
+        var optionalSections = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        HashSet<string>? Track(string key)
+        {
+            if (key is "MiscItems" or "Recipes" or "Suits" || !names.Contains(key)) return null;
+            return optionalSections[key] = new(StringComparer.Ordinal);
+        }
         foreach (var key in CountedKeys)
+        {
+            var section = Track(key);
             foreach (var e in Array(root, key))
             {
                 var uid = Item(e);
+                section?.Add(uid);
                 // Cosmetic records can omit the zero count in the game's inventory serialization.
                 var count = Field(e, "ItemCount");
                 counts[uid] = checked(counts.GetValueOrDefault(uid) +
                     (key == "FlavourItems" && count.ValueKind == JsonValueKind.Undefined ? 0 : Integer(count, key + ".ItemCount")));
             }
+        }
         var equipment = new Dictionary<string, Equipment>(StringComparer.Ordinal);
         foreach (var key in EquipmentKeys)
+        {
+            var section = Track(key);
             foreach (var e in Array(root, key))
             {
                 var uid = Item(e);
+                section?.Add(uid);
                 var previous = equipment.GetValueOrDefault(uid, new Equipment(0, 0));
                 equipment[uid] = new(checked(previous.Count + 1), Math.Max(previous.Xp, OptionalInteger(e, "XP") ?? 0));
             }
+        }
         var xp = new Dictionary<string, long>(StringComparer.Ordinal);
         foreach (var e in Array(root, "XPInfo"))
         {
@@ -105,7 +119,14 @@ public static class InventoryParser
             }
         }
         foreach (var e in Array(root, "RawUpgrades")) mods = checked(mods + Integer(Field(e, "ItemCount"), "RawUpgrades.ItemCount"));
-        var foundry = Array(root, "PendingRecipes").Select(e => new FoundryJob(Item(e), Date(Field(e, "CompletionDate")))).ToArray();
+        var foundry = Array(root, "PendingRecipes").Select(e => {
+            var id = Field(e, "ItemId");
+            if (id.ValueKind == JsonValueKind.Object) id = Field(id, "$oid");
+            var text = id.ValueKind == JsonValueKind.String ? id.GetString() : null;
+            return new FoundryJob(Item(e), Date(Field(e, "CompletionDate"))) {
+                InstanceId = text is { Length: 24 } && text.All(char.IsAsciiHexDigit) ? text.ToLowerInvariant() : null
+            };
+        }).ToArray();
         Progress? progress = null;
         if (root.TryGetProperty("Missions", out _) || root.TryGetProperty("PlayerSkills", out _))
         {
@@ -141,7 +162,7 @@ public static class InventoryParser
         return new(1, account, verified, "file-import", read, timestamp, complete, warnings.Distinct().ToArray(),
             counts, equipment, xp, upgrades, foundry,
             new(OptionalInteger(root, "PremiumCredits"), OptionalInteger(root, "RegularCredits"), OptionalInteger(root, "FusionPoints"), OptionalInteger(root, "PrimeTokens")),
-            mods, OptionalInteger(root, "PlayerLevel"), progress, standing);
+            mods, OptionalInteger(root, "PlayerLevel"), progress, standing) { OptionalQuantitySections = optionalSections };
     }
 
     private static JsonElement Field(JsonElement e, string key) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(key, out var v) ? v : default;

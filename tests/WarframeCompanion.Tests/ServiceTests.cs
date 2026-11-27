@@ -32,6 +32,70 @@ public static class ServiceTests
             manual.Mastered["/B"] = 1;
             Equal(1, J.A(view.Detail("/A"), "craftingUses").Count());
         }));
+        test("Copies to keep allocate shared ingredients, batch outputs and queued jobs once", () => WithView((fixture, manual) =>
+        {
+            var catalog = Catalog.Build(new Dictionary<string, JsonNode> {
+                ["Secondary"] = Json("""[{"uniqueName":"/A","name":"Single","masterable":true},{"uniqueName":"/B","name":"Dual","masterable":true},{"uniqueName":"/C","name":"Other","masterable":true},{"uniqueName":"/X","name":"Incomplete","masterable":true}]"""),
+                ["ExportRecipes"] = Json("""{"/bpB":{"resultType":"/B","ingredients":[{"ItemType":"/A","ItemCount":2},{"ItemType":"/part","ItemCount":2}]},"/bpC":{"resultType":"/C","ingredients":[{"ItemType":"/A","ItemCount":1},{"ItemType":"/part","ItemCount":2}]},"/bpPart":{"resultType":"/part","num":2,"ingredients":[{"ItemType":"/ore","ItemCount":3}]}}""")
+            });
+            manual.Tasks.AddRange([new("/B", null, 1), new("/C", null, 2)]);
+            manual.KeepCopies["/A"] = 1;
+            var inventory = fixture.Inventory! with { Counts = new() { ["/part"] = 1 }, Equipment = new() { ["/A"] = new(5,450000) } };
+            GameView View(InventorySnapshot? snapshot) => new(catalog, snapshot, null, manual, fixture.Market);
+            JsonNode Row(InventorySnapshot? snapshot, string uid) => J.A(View(snapshot).CopiesToKeep("test"), "copies").Single(n => J.S(n, "uid") == uid);
+            var weapon = Row(inventory, "/A");
+            Equal(3L, J.N(weapon, "required")); Equal(1L, J.N(weapon, "spare")); Equal(true, J.B(weapon["masteredWeapon"]));
+            Equal("2,1", string.Join(",", J.A(weapon, "goals").Select(g => J.N(g, "count"))));
+            Equal(6L, J.N(Row(inventory, "/ore"), "required"));
+            Equal(null, Row(inventory, "/bpPart")["spare"]);
+            var queued = inventory with { Foundry = [new("/bpPart", null)] };
+            Equal(3L, J.N(Row(queued, "/ore"), "required"));
+            manual.KeepCopies["/part"] = 2;
+            Equal(6L, J.N(Row(queued, "/ore"), "required"));
+            manual.KeepCopies.Remove("/part");
+            Equal(1L, J.N(Row(inventory with { Foundry = [new("/bpB", null)] }, "/A"), "required"));
+            inventory.Equipment["/B"] = new(1, 0);
+            Equal(1L, J.N(Row(inventory, "/A"), "required"));
+            manual.Tasks.Add(new("/X", null, 3));
+            Equal(false, J.B(View(inventory).CopiesToKeep("test")["complete"]));
+            Equal(null, Row(inventory, "/A")["spare"]);
+            Equal(null, Row(null, "/A")["owned"]);
+            var absent = inventory with { Equipment = [], OptionalQuantitySections = [] };
+            Equal(null, Row(absent, "/A")["owned"]);
+            Equal(0L, J.N(Row(absent with { OptionalQuantitySections = new() { ["Pistols"] = [] } }, "/A"), "owned", -1));
+        }));
+        test("Inventory comparison reports gains, losses, zero balances and affected goals", () => WithView((fixture, manual) =>
+        {
+            manual.Tasks.Add(new("/Cell", 10, 1));
+            manual.Counts["/Cell"] = new(1000, J.Now);
+            var before = fixture.Inventory! with { Counts = new() { ["/Cell"] = 2, ["/gone"] = 3, ["/mod"] = 2 },
+                Currencies = new(null, 60, null, 0), Upgrades = new() { ["/mod"] = [0] } };
+            var after = before with { SourceTimestamp = 200, Counts = new() { ["/Cell"] = 5, ["/new"] = 7 },
+                Currencies = new(2, 0, null, 0), Upgrades = null };
+            var view = new GameView(fixture.Catalog, after, null, manual, fixture.Market);
+            var comparison = view.InventoryChanges(before);
+            var rows = J.A(comparison, "items").ToDictionary(n => J.S(n, "uid")!);
+            Equal(3, rows.Count); Equal(3L, J.N(rows["/Cell"], "delta")); Equal(-3L, J.N(rows["/gone"], "delta"));
+            Equal(7L, J.N(rows["/new"], "delta")); Equal("/Cell", J.S(J.A(rows["/Cell"], "goals").Single(), "uid"));
+            Equal(-60L, J.N(J.A(comparison, "currencies").Single(), "delta"));
+            Equal(5L, J.N(J.A(comparison, "goals").Single(), "afterHave"));
+            Equal(0, J.A(view.InventoryChanges(after), "items").Count());
+            Equal(0, J.A(view.InventoryChanges(before with { AccountId = "elsewhere" }), "items").Count());
+        }));
+        test("Inventory comparison distinguishes a missing weapon section from an empty one", () => WithView((fixture, manual) =>
+        {
+            InventorySnapshot Parse(string json) => InventoryParser.Parse(Encoding.UTF8.GetBytes(json), "fixture", true);
+            var before = Parse("""{"MiscItems":[{"ItemType":"/Cell","ItemCount":1}],"Pistols":[{"ItemType":"/pistol"}]}""");
+            var missing = Parse("""{"MiscItems":[{"ItemType":"/Cell","ItemCount":2}]}""");
+            var empty = Parse("""{"MiscItems":[],"Pistols":[]}""");
+            JsonNode Changes(InventorySnapshot older, InventorySnapshot newer) =>
+                new GameView(fixture.Catalog, newer, null, manual, fixture.Market).InventoryChanges(older);
+            var uncertain = Changes(before, missing);
+            Equal(true, J.B(uncertain["limited"]));
+            Equal("/Cell", J.S(J.A(uncertain, "items").Single(), "uid"));
+            Equal("/Cell", J.S(J.A(Changes(missing, before), "items").Single(), "uid"));
+            Equal(-1L, J.N(J.A(Changes(before, empty), "items").Single(r => J.S(r, "uid") == "/pistol"), "delta"));
+        }));
         test("Overlay layout keeps four ordered panels aligned at game scale and monitor origin", () =>
         {
             var request = new OverlayRequest("rewards", Json("""{"cards":4}"""), -1920, 80, 1920, 1080, 1, 15, false);

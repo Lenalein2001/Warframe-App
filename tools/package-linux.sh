@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
-version=${1:?Supply a release version}
+version=$(tr -d '\r\n' < VERSION)
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 2
-pwsh -NoProfile -File tools/publish-companion.ps1 -Runtime linux-x64
-package=$(find artifacts -maxdepth 1 -type d -name 'companion-linux-x64-*' | sort | tail -1)
+work=$(mktemp -d)
+trap 'rm -rf -- "$work"' EXIT
+package="$work/package"
+stage="$work/debian"
+pwsh -NoProfile -File tools/publish-companion.ps1 -Runtime linux-x64 -OutputDirectory "$package"
 mkdir -p artifacts/linux-release
 cp "$package/WarframeCompanion-linux-x64-portable.tar.gz" artifacts/linux-release/WarframeCompanion-linux-x64-portable.tar.gz
-stage=$(mktemp -d)
-trap 'rm -rf -- "$stage"' EXIT
 mkdir -p "$stage/opt/warframe-companion" "$stage/usr/bin" "$stage/usr/share/applications" "$stage/DEBIAN"
 cp -a "$package/framework-dependent/." "$stage/opt/warframe-companion/"
 chmod 755 "$stage/opt/warframe-companion/WarframeCompanion.Desktop"
@@ -22,9 +23,10 @@ Architecture: amd64
 Maintainer: Lenalein2001 <noreply@github.com>
 Section: games
 Priority: optional
-Depends: aspnetcore-runtime-10.0, libgtk-3-0t64, libwebkit2gtk-4.1-0, libgtk-layer-shell0, libnotify4, libfontconfig1, libicu74, libssl3t64, libstdc++6, tesseract-ocr, tesseract-ocr-eng, scrot
+Depends: aspnetcore-runtime-10.0, libgtk-3-0t64, libwebkit2gtk-4.1-0, libgtk-layer-shell0, libnotify4, libfontconfig1, libicu74, libssl3t64, libstdc++6
+Suggests: tesseract-ocr, tesseract-ocr-eng, scrot
 Description: Warframe inventory, mastery, crafting and reward companion
  Native desktop host with C# services and C/C++ processing.
 EOF
 dpkg-deb --root-owner-group --build "$stage" artifacts/linux-release/WarframeCompanion-linux-x64.deb
-(cd artifacts/linux-release && sha256sum *.tar.gz *.deb > SHA256SUMS-linux.txt)
+(cd artifacts/linux-release && sha256sum WarframeCompanion-linux-x64-portable.tar.gz WarframeCompanion-linux-x64.deb > SHA256SUMS-linux.txt)

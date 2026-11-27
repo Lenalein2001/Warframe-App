@@ -12,6 +12,12 @@
     "url": "https://api.nuget.org/v3-flatcontainer/microsoft.data.sqlite.core/10.0.15/microsoft.data.sqlite.core.10.0.15.nupkg"
   },
   {
+    "pname": "Microsoft.NET.ILLink.Tasks",
+    "version": "10.0.15",
+    "sha256": "214a4264933e9143fc1c39ba31e37640d03b6b71b4ec834c21d2bc07987f2ed9",
+    "url": "https://api.nuget.org/v3-flatcontainer/microsoft.net.illink.tasks/10.0.15/microsoft.net.illink.tasks.10.0.15.nupkg"
+  },
+  {
     "pname": "Photino.NET",
     "version": "4.0.16",
     "sha256": "71bc433789eebb0605e246285de66bd87185c01d064eef105eb103ec7cf3ea9b",

@@ -90,16 +90,20 @@ function crackNow(data) {
 }
 
 function rewards(h) {
-  const entries = (h?.entries || []).slice(0, 5);
+  const entries = h?.entries || [];
   const s = h?.session || {};
   const head = `<div class="tiles" style="margin-bottom:10px">
       <div class="tile"><b>${fmt(s.screens || 0)}</b><span>reward screens this session</span></div>
       <div class="tile"><b>${plat(s.bestValue || 0)}</b><span>best picks, at market price</span></div></div>`;
   if (!entries.length) return head + `<div class="empty"><b>No reward screens yet</b>Crack a relic; the reward strip and this list fill in by themselves.</div>`;
-  return head + `<div class="list">${entries.map((e) => `<div class="list-row">
+  const row = e => `<div class="list-row">
       <span class="faint num" style="width:72px;flex:none;font-size:12.5px">${ago(e.t)}</span>
-      <div class="chips grow" style="margin:0">${e.drops.map((d) => `<span class="chip ${d.name === e.best ? "open" : ""}" data-part="${esc(d.uid)}">
-        ${esc(d.name)} ${d.price != null ? plat(d.price) : ""}${d.needed ? ` <span class="lotus">●</span>` : ""}</span>`).join("")}</div></div>`).join("")}</div>`;
+      <div class="chips grow" style="margin:0">${e.drops.map((d) => `<div class="reward-choice"><button type="button" class="chip ${d.name === e.best ? "open" : ""}" data-part="${esc(d.uid)}">
+        ${esc(d.name)} ${d.price != null ? plat(d.price) : ""}${d.needed ? ' <span class="lotus">●</span>' : ""}</button>
+        ${e.account && e.id ? `<button type="button" class="ghost" data-pick="${esc(d.uid)}" data-screen="${esc(e.id)}" data-account="${esc(e.account)}" data-previous="${esc(e.picked)}"
+          aria-label="${esc((d.uid === e.picked ? "Clear pick of " : "Mark as picked: ") + d.name)}" aria-pressed="${d.uid === e.picked}">${d.uid === e.picked ? "Picked" : "Pick"}</button>` : ""}</div>`).join("")}</div></div>`;
+  return head + `<div class="list">${entries.slice(0, 5).map(row).join("")}</div>`
+    + (entries.length > 5 ? `<details><summary>Earlier reward screens (${entries.length - 5})</summary><div class="list">${entries.slice(5).map(row).join("")}</div></details>` : "");
 }
 
 function worldCard(w) {
@@ -162,6 +166,7 @@ const card = (title, body, link, id) => `<div class="card"><div class="card-head
     ${link ? `<a class="card-link" href="#${link}">Open ${icon("next")}</a>` : ""}</div><div id="${id}">${body}</div></div>`;
 
 let lastScreens = null;
+const rewardState = s => JSON.stringify([s.account?.key, s.session?.screens]);
 
 function pinned(S) {
   return `<div class="list">${(S.pinned || []).map((p) => {
@@ -175,6 +180,15 @@ function pinned(S) {
 }
 
 function wire(view) {
+  for (const button of view.querySelectorAll("[data-pick]")) button.onclick = async () => {
+    const row = button.closest(".list-row");
+    const buttons = row.querySelectorAll("[data-pick]");
+    for (const b of buttons) b.disabled = true;
+    const uid = button.getAttribute("aria-pressed") === "true" ? null : button.dataset.pick;
+    if (await act("rewards/pick", { accountKey: button.dataset.account, id: button.dataset.screen, previous: button.dataset.previous || null, uid }))
+      window.dispatchEvent(new CustomEvent("wfp:changed"));
+    else for (const b of buttons) b.disabled = false;
+  };
   for (const el of view.querySelectorAll("[data-relic]")) el.onclick = () => el.dataset.relic && drawer.openRelic(el.dataset.relic);
   for (const el of view.querySelectorAll("[data-part]")) el.onclick = () => drawer.open(el.dataset.part);
   for (const el of view.querySelectorAll("[data-syn]")) el.onclick = () => drawer.open("syndicate:" + el.dataset.syn);
@@ -199,7 +213,7 @@ export default {
     const [fis, world, hist, stand] = await Promise.all([
       api("fissures").catch(() => null), api("world").catch(() => null), api("history").catch(() => null),
       api("standing").catch(() => null)]);
-    lastScreens = S.session?.screens;
+    lastScreens = rewardState(S);
     view.innerHTML = `<div class="page">
       ${S.dataError ? `<div class="callout" style="margin-bottom:16px">${esc(S.dataError)}</div>` : ""}
       <div id="hero">${hero(S)}</div>
@@ -239,8 +253,8 @@ export default {
     $("#pinned").innerHTML = pinned(S);
     wire($("#foundry"));
     wire($("#pinned"));
-    if (S.session?.screens !== lastScreens) {
-      lastScreens = S.session?.screens;
+    if (rewardState(S) !== lastScreens) {
+      lastScreens = rewardState(S);
       const hist = await api("history").catch(() => null);
       if (hist && $("#rewards")) { $("#rewards").innerHTML = rewards(hist); wire($("#rewards")); }
     }

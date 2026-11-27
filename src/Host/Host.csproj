@@ -3,5 +3,7 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="../Services/Services.csproj" />
     <EmbeddedResource Include="../../web/**/*" LogicalName="web/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../licenses/*" LogicalName="web/licenses/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../LICENSE" LogicalName="web/licenses/LICENSE.txt" />
   </ItemGroup>
 </Project>

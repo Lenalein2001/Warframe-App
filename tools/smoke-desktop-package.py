@@ -14,6 +14,7 @@ import zipfile
 local_http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 packages = pathlib.Path(sys.argv[1]).resolve()
+timings = []
 
 def request(port, route, body=None):
     payload = None if body is None else json.dumps(body).encode()
@@ -40,6 +41,7 @@ for package in json.loads((packages / 'measurements.json').read_text(encoding='u
         assert {f['name'] for f in config['runtimeOptions']['frameworks']} == {'Microsoft.NETCore.App', 'Microsoft.AspNetCore.App'}
         assert not (extracted / 'app/coreclr.dll').exists(), 'Shared runtime was bundled'
         assert not (extracted / 'app/System.Private.CoreLib.dll').exists(), 'Framework assembly was bundled'
+        assert not (extracted / 'app/WarframeCompanion.Desktop.dll').exists(), 'Managed application was not bundled'
         for restart in (False, True):
             with socket.socket() as listener:
                 listener.bind(('127.0.0.1', 0))
@@ -50,6 +52,7 @@ for package in json.loads((packages / 'measurements.json').read_text(encoding='u
                 process = subprocess.Popen([str(executable), '--headless', '--offline', '--no-game',
                                             '--data-dir', str(data), '--port', str(port)],
                                            stdout=out, stderr=err,
+                                           env={**os.environ, 'DOTNET_BUNDLE_EXTRACT_BASE_DIR': str(data / 'extraction')},
                                            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
                 try:
                     while True:
@@ -63,6 +66,11 @@ for package in json.loads((packages / 'measurements.json').read_text(encoding='u
                                 raise RuntimeError(f'{edition} did not start within 60 seconds')
                             time.sleep(.2)
                     backend_seconds = time.monotonic() - started
+                    trace = (data / 'startup-timing.log').read_text().splitlines()
+                    timings.append({'edition': edition, 'restart': restart,
+                                    'headless_backend_seconds': backend_seconds, 'stages': trace})
+                    (packages / 'startup-smoke.json').write_text(json.dumps(timings, indent=2), encoding='utf-8')
+                    assert not (data / 'extraction').exists(), 'Bundle extracted files during startup'
                     assert state['accounts'] == [], 'Package accessed real account data'
                     assert b'<html' in request(port, ''), 'Embedded interface missing'
                     duplicate = subprocess.run([str(executable), '--headless', '--offline', '--no-game',

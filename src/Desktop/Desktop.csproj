@@ -1,14 +1,33 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>WinExe</OutputType><AssemblyName>WarframeCompanion.Desktop</AssemblyName><ApplicationIcon>../../assets/icon.ico</ApplicationIcon></PropertyGroup>
+  <PropertyGroup>
+    <!-- Bundle managed code on Windows without runtime payloads or extraction.
+         Nix launches the DLL through its shared runtime and must keep that layout. -->
+    <PublishSingleFile Condition="'$(RuntimeIdentifier)' == 'win-x64' and '$(UseAppHost)' != 'false'">true</PublishSingleFile>
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
+    <SelfContained>false</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract Condition="'$(SingleFilePortable)' != 'true'">false</IncludeNativeLibrariesForSelfExtract>
+    <IncludeNativeLibrariesForSelfExtract Condition="'$(SingleFilePortable)' == 'true'">true</IncludeNativeLibrariesForSelfExtract>
+    <IncludeAllContentForSelfExtract>false</IncludeAllContentForSelfExtract>
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
   <ItemGroup>
-    <Content Include="../../assets/icon.ico" Link="icon.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="../../assets/icon.png" Link="icon.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <EmbeddedResource Include="../../assets/icon.ico" LogicalName="icon.ico" />
+    <EmbeddedResource Include="../../assets/icon.png" LogicalName="icon.png" />
     <ProjectReference Include="../Host/Host.csproj" />
     <PackageReference Include="Photino.NET" Version="4.0.16" />
   </ItemGroup>
   <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
     <Content Include="../Native/build/libwarframe_overlay.so" Link="libwarframe_overlay.so" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+  <Target Name="ConfigureBundleFiles" BeforeTargets="_ComputeFilesToBundle" Condition="'$(PublishSingleFile)' == 'true' and '$(SingleFilePortable)' != 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Update="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'WarframeCompanion.Desktop.runtimeconfig.json'">
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
   <Target Name="ExcludeReleaseSymbols" AfterTargets="ComputeFilesToPublish" Condition="'$(Configuration)' == 'Release'">
     <ItemGroup>
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.pdb'" />

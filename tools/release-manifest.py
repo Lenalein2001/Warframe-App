@@ -42,7 +42,7 @@ def main():
         return
     repository = pathlib.Path(__file__).resolve().parent.parent
     commit = subprocess.check_output(['git', '-C', str(repository), 'rev-parse', 'HEAD'], text=True).strip()
-    dirty = bool(subprocess.check_output(['git', '-C', str(repository), 'status', '--porcelain', '--untracked-files=no'], text=True).strip())
+    dirty = bool(subprocess.check_output(['git', '-C', str(repository), 'status', '--porcelain', '--untracked-files=normal'], text=True).strip())
     manifest = {'schema': 1, 'repository': 'https://github.com/Lenalein2001/Warframe-App',
                 'commit': commit, 'uncommittedChanges': dirty, 'runtime': args.runtime, 'edition': args.edition, 'files': files}
     (root / NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n', encoding='utf-8')

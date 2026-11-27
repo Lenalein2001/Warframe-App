@@ -41,13 +41,15 @@ Download packages from [GitHub Releases](https://github.com/Lenalein2001/Warfram
 
 ### Windows
 
-- **Installer:** run `WarframeCompanion-win-x64-Setup.exe` for a per-user installation and Start menu shortcut.
+- **Installer:** run `WarframeCompanion-win-x64-Setup.exe` for a per-user installation and Start menu shortcut. Setup shows download links only for missing runtimes and can check again without restarting.
 - **Portable:** extract `WarframeCompanion-win-x64-portable.zip` and run `Start Warframe Companion.exe`. Program files stay in `app/`. A fresh copy shares your installed profile; an existing `data/` profile stays portable. Use `--portable` to create separate portable storage.
 - **Requirements:** install the latest x64 .NET 10 and ASP.NET Core 10 runtimes from [Microsoft](https://dotnet.microsoft.com/en-us/download/dotnet/10.0). The SDK is not needed. Windows displays a download prompt if a required runtime is missing.
 
 Opening the same profile again brings its running desktop window forward. Each profile runs in one companion process.
 
-Windows also requires WebView2. Standard packages do not bundle .NET runtimes. The portable ZIP is approximately 13 MB and the extracted app approximately 28 MB, including the English OCR fallback. Shared runtimes are installed once and serviced separately.
+Windows also requires WebView2. Standard packages do not bundle .NET runtimes. Shared runtimes are installed once and serviced separately.
+
+The Windows single-file portable is `WarframeCompanion-win-x64.exe`. It launches directly and keeps settings across executable replacements. OCR is optional: Settings offers **Download and install OCR** for screen scanning and overlays, with a one-time download of approximately 5 MB. Inventory and collection management do not require OCR.
 
 ### Linux
 
@@ -86,7 +88,7 @@ The app combines several sources; none should be mistaken for a complete officia
 | Public account profiles | Profile and mastery information; not a complete inventory. |
 | Local `EE.log` / `EE.cfg` | Account/session signals and interface scale, read without changing game files. |
 | Imports and manual tracking | User-supplied inventory snapshots, counts and collection progress. |
-| Optional process-memory capture | Inventory found in the running game through read-only OS access. Disabled by default; existing choices are retained. |
+| Optional process-memory capture | Read-only inventory refresh after live login or inventory sync events, including mission completion. Off by default. A manual read is also available. |
 | Screenshot/OCR fallback | Visible relic reward names and riven cards, processed locally. |
 
 ## What the app does and does not do
@@ -95,7 +97,7 @@ The companion helps you inspect information and plan your next action. It **does
 
 Overlays are separate desktop windows. OCR uses screen pixels and temporary local files; when game-window capture is unavailable, capture can include other desktop content. Memory scanning can temporarily encounter unrelated game bytes. Raw scan buffers are cleared when released; only recognized inventory fields are saved. This is data minimization, not a promise that sensitive data can never exist in process memory or an OS crash dump.
 
-Disabling memory capture cancels active work and prevents cancelled results from being saved. Scans have time and byte limits, do not elevate privileges, and stop when the operating system denies access. Existing confirmed inventory remains available when capture fails.
+Disabling memory capture cancels active work. Scans have time and byte limits, do not elevate privileges, and stop when the operating system denies access. Reads with unverified ownership are discarded, and confirmed inventory stays available after failed reads. Digital Extremes treats third-party software as [use at your own risk](https://support.warframe.com/hc/en-us/articles/360030014351-Third-Party-Software-and-You).
 
 ### Local API and privacy
 

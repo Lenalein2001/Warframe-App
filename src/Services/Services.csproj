@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup><ProjectReference Include="../Persistence/Persistence.csproj" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="riven-data.json" LogicalName="WarframeCompanion.Services.riven-data.json" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="ocr-package.json" LogicalName="ocr-package.json" /></ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
     <Content Include="../Native/build/$(Configuration)/warframe_native.dll" Link="warframe_native.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>

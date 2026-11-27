@@ -10,12 +10,20 @@ public sealed class WorldService(CachedJson cache, string platform)
     public string? Error { get; private set; }
     public string? NightwaveTag => Regex.Replace(J.S(J.Get(raw, "nightwave"), "tag") ?? "", @"\s+", "");
     public double? SpiralBegan => Epoch(J.S(raw?["duviriCycle"], "activation"));
+    public double? SpiralEnds => Epoch(J.S(raw?["duviriCycle"], "expiry"));
+    internal static string CaveFreshness(double? rolled, double? start, double? end, double now)
+    {
+        if (rolled < start || now >= end && rolled < end) return "stale";
+        return rolled >= start && rolled < end && now < end ? "current" : "unknown";
+    }
     public static JsonNode Duviri(GameView view, JsonNode offers, double? spiral)
     {
         var slots = new[] { (3, "Warframes"), (1, "Primary"), (0, "Secondary"), (5, "Melee"), (-1, "Other") };
         var groups = slots.Select(s => new { slot = s.Item2, picks = J.A(offers, "offers").Where(p => s.Item1 == -1 ? !new long[] { 3, 1, 0, 5 }.Contains(J.N(p, "category")) : J.N(p, "category") == s.Item1).Select(p => {
-            var uid = J.S(p, "uid") ?? ""; var item = view.Catalog.Items.GetValueOrDefault(uid); return new { uid, name = view.Catalog.NameOf(uid), owned = J.B(p?["owned"]), mastered = item != null && view.Status(item).Status == "mastered", image = view.Catalog.ImageFor(uid) }; }).ToArray() }).Where(g => g.picks.Length > 0);
-        return J.Node(new { groups, rolled = J.D(offers["rolled"]), stale = J.D(offers["rolled"]) < spiral });
+            var uid = J.S(p, "uid") ?? ""; var item = view.Catalog.Items.GetValueOrDefault(uid); return new { uid, name = view.Catalog.NameOf(uid), owned = J.B(p?["owned"]), mastered = item != null && view.Status(item).Status == "mastered", onBoard = view.Manual.Tasks.Any(t => t.Uid == uid), image = view.Catalog.ImageFor(uid) }; }).ToArray() }).Where(g => g.picks.Length > 0);
+        var rolled = J.D(offers["rolled"]);
+        var freshness = CaveFreshness(rolled, spiral, view.SpiralEnd, J.Now);
+        return J.Node(new { groups, rolled, freshness, stale = freshness == "stale" });
     }
     public async Task Refresh(CancellationToken cancellation = default)
     {
@@ -59,9 +67,11 @@ public sealed class WorldService(CachedJson cache, string platform)
     private static JsonNode Describe(JsonNode? value) => J.Node(new { name = J.S(value, "name"), description = J.S(value, "description") is { } d && !d.StartsWith("[PH]", StringComparison.Ordinal) ? d : null });
     public JsonNode Summary(Catalog catalog)
     {
-        if (raw == null) return J.Node(new { error = Error ?? "World state is loading." });
+        var now = DateTimeOffset.UtcNow;
+        var resets = new { daily = NextDaily(now).ToString("O"), weekly = NextWeekly(now).ToString("O") };
+        if (raw == null) return J.Node(new { error = Error ?? "World state is loading.", resets });
         var vt = J.Get(raw, "voidTrader"); var sortie = J.Get(raw, "sortie"); var archon = J.Get(raw, "archonHunt"); var sp = J.Get(raw, "steelPath"); var nw = J.Get(raw, "nightwave");
-        var now = DateTimeOffset.UtcNow; var time = now.ToUnixTimeMilliseconds() / 1000.0;
+        var time = now.ToUnixTimeMilliseconds() / 1000.0;
         var cycles = new[] { ("cetusCycle", "Cetus", "Plains of Eidolon"), ("vallisCycle", "Orb Vallis", "Venus"), ("cambionCycle", "Cambion Drift", "Deimos"), ("zarimanCycle", "Zariman", "Faction"), ("duviriCycle", "Duviri", "Spiral"), ("earthCycle", "Earth", "Day and night") }
             .Select(p => new { name = p.Item2, place = p.Item3, state = J.S(J.Get(raw, p.Item1), "state"), expiry = J.S(J.Get(raw, p.Item1), "expiry") }).Where(c => c.expiry != null);
         var deal = J.A(raw, "dailyDeals").FirstOrDefault();
@@ -74,7 +84,7 @@ public sealed class WorldService(CachedJson cache, string platform)
             steelPath = new { reward = J.S(J.Get(sp, "currentReward"), "name"), cost = J.N(J.Get(sp, "currentReward"), "cost"), expiry = J.S(sp, "expiry"), image = catalog.ArtByName(J.S(J.Get(sp, "currentReward"), "name") ?? "") },
             nightwave = new { season = J.Get(nw, "season"), expiry = J.S(nw, "expiry"), challenges = J.A(nw, "activeChallenges").Select(c => new { title = J.S(c, "title"), desc = J.S(c, "desc"), reputation = J.N(c, "reputation"), daily = J.B(J.Get(c, "isDaily")), elite = J.B(J.Get(c, "isElite")), expiry = J.S(c, "expiry") }) },
             darvo = deal == null ? null : new { item = J.S(deal, "item"), price = J.N(deal, "salePrice"), originalPrice = J.N(deal, "originalPrice"), discount = J.N(deal, "discount"), stock = J.N(deal, "total"), sold = J.N(deal, "sold"), expiry = J.S(deal, "expiry"), image = catalog.ArtByName(J.S(deal, "item") ?? "") },
-            resets = new { daily = NextDaily(now).ToString("O"), weekly = NextWeekly(now).ToString("O") },
+            resets,
             alerts = J.A(raw, "alerts").Select(a => { var m = J.Get(a, "mission"); var reward = RewardText(J.Get(m, "reward")); return new { type = J.S(m, "type"), node = J.S(m, "node"), faction = J.S(m, "faction"), what = J.S(m, "description"), reward, expiry = J.S(a, "expiry"), rewards = reward.Split(", ", StringSplitOptions.RemoveEmptyEntries).GroupBy(n => n).Select(g => new { name = g.Key, count = g.Count(), image = catalog.ArtByName(g.Key) }) }; }),
             invasions = J.A(raw, "invasions").Where(i => !J.B(J.Get(i, "completed"))).Select(i => { var ar = RewardText(J.Get(J.Get(i, "attacker"), "reward")); var dr = RewardText(J.Get(J.Get(i, "defender"), "reward")); return new {
                 node = J.S(i, "node"), what = J.S(i, "desc"), completion = J.D(J.Get(i, "completion")), attacker = J.S(J.Get(i, "attacker"), "faction"), attackerReward = ar, defender = J.S(J.Get(i, "defender"), "faction"), defenderReward = dr, attackerImage = catalog.ArtByName(ar), defenderImage = catalog.ArtByName(dr) }; }),

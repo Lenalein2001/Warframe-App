@@ -52,8 +52,8 @@ setInterval(() => {
 export async function api(path, body) {
   const opt = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
   const ctl = new AbortController();
-  const slow = /scan$/.test(path);
-  const timer = setTimeout(() => ctl.abort(), slow ? 60000 : 20000);
+  const slow = /scan$/.test(path) || path === "memory/read";
+  const timer = setTimeout(() => ctl.abort(), path === "ocr/install" ? 150000 : slow ? 60000 : 20000);
   let r;
   try {
     r = await fetch("/api/" + path, { ...opt, signal: ctl.signal });

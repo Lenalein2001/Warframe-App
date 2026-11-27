@@ -10,8 +10,18 @@ $data = Join-Path $testRoot 'profile'
 New-Item -ItemType Directory -Path $data -Force | Out-Null
 $sentinel = Join-Path $data 'preserve-settings.txt'
 'preserve-me' | Set-Content -LiteralPath $sentinel
+$emptyRuntime = Join-Path $testRoot 'empty-dotnet'
+$missingLog = Join-Path $testRoot 'missing-runtime.log'
+New-Item -ItemType Directory -Path $emptyRuntime | Out-Null
+$missing = Start-Process -FilePath $setup -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', '/NOCLOSEAPPLICATIONS', "/DIR=`"$destination`"", "/LOG=`"$missingLog`"") -Environment @{ DOTNET_ROOT_X64 = $emptyRuntime } -WindowStyle Hidden -Wait -PassThru
+if ($missing.ExitCode -eq 0 -or (Test-Path -LiteralPath $destination)) { throw 'Setup continued with a missing runtime.' }
+$missingText = Get-Content -Raw -LiteralPath $missingLog
+if ($missingText -notmatch '\.NET Runtime 10 \(x64\)' -or $missingText -notmatch 'ASP\.NET Core Runtime 10 \(x64\)') {
+    throw 'Setup did not identify the two missing .NET runtimes.'
+}
+Write-Output 'Setup identified missing .NET runtimes before installing any application files.'
 function Install-Candidate {
-    $install = Start-Process -FilePath $setup -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', "/DIR=`"$destination`"") -WindowStyle Hidden -Wait -PassThru
+    $install = Start-Process -FilePath $setup -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', '/NOCLOSEAPPLICATIONS', "/DIR=`"$destination`"") -WindowStyle Hidden -Wait -PassThru
     if ($install.ExitCode -ne 0) { throw "Installer failed: $($install.ExitCode)" }
 }
 Install-Candidate
@@ -31,11 +41,15 @@ try {
 }
 $retiredRuntime = Join-Path $destination 'System.Private.CoreLib.dll'
 [IO.File]::WriteAllText($retiredRuntime, 'old bundled runtime fixture')
+$retiredManaged = Join-Path $destination 'WarframeCompanion.Desktop.dll'
+[IO.File]::WriteAllText($retiredManaged, 'old managed assembly fixture')
 $retiredOcr = Join-Path $destination 'tools/tesseract/obsolete-test-library.dll'
+New-Item -ItemType Directory -Path (Split-Path -Parent $retiredOcr) -Force | Out-Null
 [IO.File]::WriteAllText($retiredOcr, 'old OCR dependency fixture')
 $settingsHash = (Get-FileHash -LiteralPath (Join-Path $data 'state.sqlite')).Hash
 Install-Candidate
 if (Test-Path -LiteralPath $retiredRuntime) { throw 'Upgrade retained the old bundled runtime.' }
+if (Test-Path -LiteralPath $retiredManaged) { throw 'Upgrade retained a managed assembly already inside the bundle.' }
 if (Test-Path -LiteralPath $retiredOcr) { throw 'Upgrade retained an obsolete OCR dependency.' }
 if ((Get-FileHash -LiteralPath (Join-Path $data 'state.sqlite')).Hash -ne $settingsHash) { throw 'Upgrade changed settings.' }
 $uninstall = Start-Process -FilePath (Join-Path $destination 'unins000.exe') -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -WindowStyle Hidden -Wait -PassThru

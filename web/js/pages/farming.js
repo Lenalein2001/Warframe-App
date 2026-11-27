@@ -18,6 +18,7 @@ function card(t) {
     <span class="task-body">
       <span class="task-top"><span class="task-kind">${esc(t.sub)}</span><span class="task-state">${esc(TASK_STATE[t.state] || t.state)}</span></span>
       <span class="task-name">${esc(t.name)}</span>
+      ${t.cave ? `<span class="pill ${t.cave === "current" ? "lotus" : ""}">${t.cave === "current" ? "Offered in Teshin's Cave" : t.cave === "stale" ? "Previous Cave roll" : "Last recorded Cave roll"}</span>` : ""}
       <span class="task-note">${esc(t.note)}</span>
       <span class="bar thin"><i style="width:${pct}%"></i></span>
     </span></button>`;

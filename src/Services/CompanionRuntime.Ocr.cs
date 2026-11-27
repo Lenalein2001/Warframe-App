@@ -11,6 +11,8 @@ public sealed partial class CompanionRuntime
     private JsonNode rewards = new JsonObject();
     private JsonNode riven = new JsonObject();
     private long rewardGeneration;
+    private string? rewardScreenId;
+    private double rewardOpenedAt;
     private Task? automaticOcr;
     public event Action<OverlayRequest>? OverlayRequested;
     public event Action<string, JsonNode>? OverlayUpdated;
@@ -19,22 +21,24 @@ public sealed partial class CompanionRuntime
     public Func<JsonNode>? HotkeyStatus { get; set; }
     private void StartAutomaticOcr()
     {
-        if (!J.B(GetSettings()["ocr_enabled"]) || automaticOcr is { IsCompleted: false }) return;
+        if (Ocr.Executable == null || !J.B(GetSettings()["ocr_enabled"]) || automaticOcr is { IsCompleted: false }) return;
         automaticOcr = ScanRewards(true, stop.Token);
     }
     private void CloseRewards() { Interlocked.Increment(ref rewardGeneration); OverlayHidden?.Invoke(); }
     private GameView PlayingView()
     {
-        lock (sync) { var account = registry.Accounts.FirstOrDefault(a => a.Key == playingKey) ?? Active; return new(Catalog, account == null ? null : snapshots.Current(account.Id ?? account.Key), account?.Profile, account?.Manual ?? new(), Market); }
+        lock (sync) return ViewOf(registry.Accounts.FirstOrDefault(a => a.Key == playingKey) ?? Active, false, out _);
     }
     public async Task<JsonNode> ScanRewards(bool automatic, CancellationToken cancellation, string? savedImage = null, double? imageScale = null)
     {
         if (!await ocrGate.WaitAsync(0, cancellation)) { lock (sync) return rewards.DeepClone(); }
         string? accountKey;
-        lock (sync) accountKey = playingKey ?? registry.Active;
+        string? screenId;
+        lock (sync) { accountKey = playingKey ?? registry.Active; screenId = rewardScreenId; }
         var generation = Interlocked.Read(ref rewardGeneration); var started = J.Now; CapturedScreen? screen = null;
         try
         {
+            var ocrExecutable = Ocr.Executable ?? throw new InventoryException("Install the optional OCR files in Settings to use screen scanning and overlays.");
             OverlayHidden?.Invoke(); var config = GetSettings(); RewardLayout? layout;
             do
             {
@@ -52,22 +56,23 @@ public sealed partial class CompanionRuntime
                 var left = screen.Bitmap.Width / 2.0 - cards * width / 2 + slot * width;
                 var rectangle = new SKRectI((int)left, (int)(layout == null ? screen.Bitmap.Height * .27 : screen.Bitmap.Height / 2.0 - 150 * unit), (int)(left + width), (int)(layout == null ? screen.Bitmap.Height * .56 : screen.Bitmap.Height / 2.0 - 78 * unit));
                 (string? Name, double Score) best = (null, 0);
-                foreach (var variant in new[] { 2, 3, 4, 0 }) { var read = await ScreenCapture.Text(screen.Bitmap, rectangle, 6, variant, cancellation); text.Add(read); var match = OcrReader.Match(read, names.Keys); if (match.Score > best.Score) best = match; if (best.Score >= .98) break; }
+                foreach (var variant in new[] { 2, 3, 4, 0 }) { var read = await ScreenCapture.Text(screen.Bitmap, rectangle, 6, variant, cancellation, ocrExecutable); text.Add(read); var match = OcrReader.Match(read, names.Keys); if (match.Score > best.Score) best = match; if (best.Score >= .98) break; }
                 if (best.Name == null || best.Score < .9 && items.Any(i => J.S(i, "name") == best.Name)) continue;
                 var reward = names[best.Name]; var uid = Catalog.Aliases.GetValueOrDefault(reward.Uid) ?? reward.Uid; var part = Catalog.Parts.GetValueOrDefault(uid); var slug = Market.Slug(uid, reward.Slug, reward.Name);
                 var needed = part?.Items.Select(id => Catalog.Items.GetValueOrDefault(id)).OfType<GameItem>().Where(i => view.Status(i).Status != "mastered" && view.Owned(i.Uid) is null or 0).SelectMany(i => view.Parts(i)).Where(p => p.Uid == uid).Select(p => Math.Max(0, p.Need - p.Have)).DefaultIfEmpty().Max() ?? 0;
-                items.Add(J.Node(new { name = reward.Name, uid, score = best.Score, slug, have = view.Count(uid), needed, vaulted = part?.Vaulted, ducats = Market.Item(slug)?.Ducats, price = Market.Price(slug)?.Sell, slot = layout == null ? (int?)null : slot }));
+                items.Add(J.Node(new { name = reward.Name, uid, inventoryUid = reward.Uid, score = best.Score, slug, have = view.Count(uid), needed, vaulted = part?.Vaulted, ducats = Market.Item(slug)?.Ducats, price = Market.Price(slug)?.Sell, slot = layout == null ? (int?)null : slot }));
             }
             string? Best() => items.Where(i => J.N(i, "price") > 0).OrderByDescending(i => J.N(i, "price")).Select(i => J.S(i, "name")).FirstOrDefault();
-            var result = J.Node(new { t = J.Now, items, best = Best(), ocr = string.Join('\n', text), error = items.Count == 0 ? "No reward names could be read." : layout == null ? "Unconfirmed screen: these names are not recorded in history." : null, cards = layout?.Cards, scale = layout?.Scale });
+            var result = J.Node(new { t = started, screenId, items, best = Best(), ocr = string.Join('\n', text), error = items.Count == 0 ? "No reward names could be read." : layout == null ? "Unconfirmed screen: these names are not recorded in history." : null, cards = layout?.Cards, scale = layout?.Scale });
+            var record = savedImage == null && layout != null && items.Count > 0;
             lock (sync)
             {
                 if (accountKey != (playingKey ?? registry.Active) || generation != Interlocked.Read(ref rewardGeneration)) return new JsonObject();
                 rewards = result.DeepClone();
+                if (record) History.Record(result, accountKey);
             }
-            if (savedImage == null && layout != null && items.Count > 0 && generation == Interlocked.Read(ref rewardGeneration))
+            if (record && generation == Interlocked.Read(ref rewardGeneration))
             {
-                lock (sync) History.Record(result, accountKey);
                 if (J.B(config["notify"])) Notify("reward:" + J.D(result["t"]), "Relic rewards", string.Join(" · ", items.Select(i => J.S(i, "name") + (J.Get(i, "price") != null ? " " + J.N(i, "price") + "p" : ""))));
                 if (J.B(config["overlay_enabled"])) OverlayRequested?.Invoke(new("rewards", result.DeepClone(), screen.X, screen.Y, screen.Bitmap.Width, screen.Bitmap.Height, unit, (int)J.N(config, "overlay_seconds", 15), J.S(config, "overlay_position") == "above", J.S(config, "overlay_backend") ?? "auto", screen.CoordinateScale));
                 for (var attempt = 0; attempt < 8 && !Offline && generation == Interlocked.Read(ref rewardGeneration); attempt++)
@@ -75,8 +80,14 @@ public sealed partial class CompanionRuntime
                     if (items.All(i => J.Get(i, "price") != null || J.S(i, "slug") == null)) break;
                     await Task.Delay(400, cancellation);
                     foreach (var item in items) if (Market.Price(J.S(item, "slug"), false)?.Sell is { } price) item["price"] = price;
-                    result["items"] = J.Array(items); result["best"] = Best(); lock (sync) rewards = result.DeepClone();
-                    History.Record(result, accountKey); OverlayUpdated?.Invoke("rewards", result.DeepClone());
+                    result["items"] = J.Array(items); result["best"] = Best();
+                    lock (sync)
+                    {
+                        if (accountKey != (playingKey ?? registry.Active) || generation != Interlocked.Read(ref rewardGeneration)) break;
+                        rewards = result.DeepClone();
+                        History.Record(result, accountKey);
+                    }
+                    OverlayUpdated?.Invoke("rewards", result.DeepClone());
                 }
             }
             return result;
@@ -90,13 +101,14 @@ public sealed partial class CompanionRuntime
         await ocrGate.WaitAsync(cancellation);
         try
         {
+            var ocrExecutable = Ocr.Executable ?? throw new InventoryException("Install the optional OCR files in Settings to use screen scanning and overlays.");
             OverlayHidden?.Invoke(); var config = GetSettings(); using var frame = savedImage == null ? await ScreenCapture.Capture(J.S(config, "screenshot_tool") ?? "auto", cancellation) : ScreenCapture.ReadSaved(savedImage);
             var unit = Math.Min(frame.Bitmap.Width / 1920.0, frame.Bitmap.Height / 1080.0) * (imageScale ?? Log.Scale ?? 1); var cx = frame.Bitmap.Width / 2.0; var cy = frame.Bitmap.Height / 2.0;
             var crops = new[] { new SKRectI((int)(cx - 150 * unit), (int)(cy + 70 * unit), (int)(cx + 150 * unit), (int)(cy + 285 * unit)), new SKRectI(0, 0, frame.Bitmap.Width, frame.Bitmap.Height) };
             ParsedRiven best = new(null, []); var raw = "";
             foreach (var crop in crops)
             {
-                foreach (var variant in new[] { 0, 1 }) { var text = await ScreenCapture.Text(frame.Bitmap, crop, 6, variant, cancellation); var read = OcrReader.ParseRiven(text, Catalog.Items.Values.Where(i => i.Disposition > 0).Select(i => i.Name)); if (read.Weapon != null && (best.Weapon == null || read.Stats.Length > best.Stats.Length)) { best = read; raw = text; } }
+                foreach (var variant in new[] { 0, 1 }) { var text = await ScreenCapture.Text(frame.Bitmap, crop, 6, variant, cancellation, ocrExecutable); var read = OcrReader.ParseRiven(text, Catalog.Items.Values.Where(i => i.Disposition > 0).Select(i => i.Name)); if (read.Weapon != null && (best.Weapon == null || read.Stats.Length > best.Stats.Length)) { best = read; raw = text; } }
                 if (best.Weapon != null && best.Stats.Length >= 2) break;
             }
             if (best.Weapon == null || best.Stats.Length == 0) throw new InventoryException("No weapon and riven stats could be read. Keep the card fully visible.");

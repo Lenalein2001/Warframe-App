@@ -1,7 +1,7 @@
 // Inventory: everything the last memory scan (or imported file) holds - resources, mods, arcanes,
 // relics, parts, fish, decorations, equipment - searchable, with the game's own icons.
 
-import { $, api, artUrl, debounce, esc, fmt, ago } from "../lib.js";
+import { $, act, api, artUrl, debounce, esc, fmt, ago } from "../lib.js";
 import * as drawer from "../drawer.js";
 
 const st = { q: "", kind: "", sort: "name", tradable: false, weapons: false, mastered: false, crafting: "", limit: 240 };
@@ -30,21 +30,107 @@ function tile(x) {
   return `<${open ? "button type=\"button\"" : "div"} class="inv-tile${open ? " click" : ""}" ${open ? `data-uid="${esc(open)}"` : ""} title="${esc(x.name)}">
     ${pic(x)}<span class="inv-body"><span class="inv-name">${esc(x.name)}</span>
       <span class="inv-meta"><span class="inv-kind">${esc(x.kind)}</span>${money}</span>
-      ${x.isWeapon || x.craftingUses ? `<span class="inv-meta">${x.mastered === true ? "Mastered · " : ""}${usage}</span>` : ""}</span>
+      ${x.isWeapon || x.craftingUses ? `<span class="inv-meta">${x.mastered === true ? "Mastered Â· " : ""}${usage}</span>` : ""}</span>
     <span class="inv-count">${x.count > 1 || !EQUIPMENT.has(x.kind) ? fmt(x.count) : ""}</span></${open ? "button" : "div"}>`;
 }
+
+const tabs = [["items", "Items"], ["changes", "Changes since last sync"], ["copies", "Copies to keep"]];
+function navigation(tab) {
+  return `<nav class="toolbar inventory-tabs" aria-label="Inventory views">${tabs.map(([id, name]) =>
+    `<a class="btn ghost" href="#inventory?tab=${id}" ${id === tab ? 'aria-current="page"' : ""}>${name}</a>`).join("")}</nav>`;
+}
+
+const goalLink = g => `<a href="#farming?item=${encodeURIComponent("task:" + g.uid)}">${esc(g.name)}</a>`;
+
+function changesPanel(data) {
+  if (data.from == null) return `<div class="empty">Changes appear after two consecutive confirmed inventories for this account.</div>`;
+  const date = t => esc(new Date(t * 1000).toLocaleString());
+  const rows = [...data.currencies, ...data.items.sort((a, b) => a.name.localeCompare(b.name))];
+  const table = rows.length ? `<div class="inventory-table"><table><thead><tr><th>Item or currency</th><th>Before</th><th>After</th><th>Change</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td>${esc(r.name)}${(r.goals || []).map(g => `<small>${goalLink(g)}</small>`).join("")}</td><td>${fmt(r.before)}</td><td>${fmt(r.after)}</td><td>${r.delta > 0 ? "+" : ""}${fmt(r.delta)}</td></tr>`).join("")}
+    </tbody></table></div>` : '<div class="empty">Item quantities and known currency balances stayed the same.</div>';
+  const goals = data.goals.length ? `<h2>Farming progress</h2><div class="list">${data.goals.map(g =>
+    `<a class="list-row" href="#farming?item=${encodeURIComponent("task:" + g.uid)}"><b>${esc(g.name)}</b>
+       <span>${esc(g.before)} &rarr; ${esc(g.after)}${g.before === g.after && g.beforeHave !== g.afterHave ? ` (${fmt(g.beforeHave)} &rarr; ${fmt(g.afterHave)})` : ""}</span></a>`).join("")}</div>` : "";
+  return `<p class="muted">${date(data.from)} &rarr; ${date(data.to)}</p>${data.limited ? '<p class="muted">Coverage differs or is unknown for part of this comparison.</p>' : ""}${table}${goals}`;
+}
+
+const copyFilters = { query: "", surplus: false, limit: 80 };
+function copiesPanel(view, data, mastered) {
+  const form = view.querySelector("[data-copies]");
+  form.innerHTML = `<p class="muted">The minimum is how many to keep after crafting your equipment goals.</p>
+    ${!data.hasInventory ? '<p class="muted">Owned and unreserved quantities appear after the first confirmed inventory.</p>' : ""}
+    ${!data.complete ? '<p class="callout">Some planned recipes are incomplete. Unreserved quantities are unknown.</p>' : ""}
+    <div class="toolbar"><input type="search" aria-label="Find an item" placeholder="Find an item" value="${esc(copyFilters.query)}">
+    <label class="check"><input type="checkbox" data-surplus ${copyFilters.surplus ? "checked" : ""}>Unreserved copies only</label>
+    <label class="check"><input type="checkbox" data-mastered ${mastered ? "checked" : ""}>Mastered weapons only</label></div>
+    <div class="inventory-table"><table><thead><tr><th>Item</th><th>Owned</th><th>For crafting</th><th>Keep after crafting</th><th>Unreserved</th></tr></thead>
+    <tbody></tbody></table></div><p data-empty hidden>No matching items.</p><button type="button" data-more hidden>Show more</button>`;
+  const items = data.copies.sort((a, b) => Number(b.goals.length > 0 || b.minimum > 0) - Number(a.goals.length > 0 || a.minimum > 0) || a.name.localeCompare(b.name));
+  function draw() {
+    const query = copyFilters.query.trim().toLowerCase();
+    const rows = items.filter(r => r.name.toLowerCase().includes(query) && (!copyFilters.surplus || r.spare > 0) && (!mastered || r.masteredWeapon));
+    form.querySelector("tbody").innerHTML = rows.slice(0, copyFilters.limit).map(r => `<tr>
+      <td>${esc(r.name)}${r.goals.map(g => `<small>${goalLink(g)} &times; ${fmt(g.count)}</small>`).join("")}</td>
+      <td>${fmt(r.owned)}</td><td>${r.required == null ? '<span title="Blueprint reusability is unknown">Unknown</span>' : fmt(r.required)}</td><td><form data-uid="${esc(r.uid)}">
+      <input type="number" required min="0" max="2147483647" step="1" value="${r.minimum}" aria-label="Copies of ${esc(r.name)} to keep">
+      <button type="submit" class="ghost" disabled>Save</button></form></td><td>${fmt(r.spare)}</td></tr>`).join("");
+    form.querySelector("[data-empty]").hidden = rows.length > 0;
+    form.querySelector("[data-more]").hidden = rows.length <= copyFilters.limit;
+  }
+  form.querySelector("[type=search]").oninput = e => { copyFilters.query = e.target.value; copyFilters.limit = 80; draw(); };
+  form.querySelector("[data-mastered]").onchange = e => { location.hash = "inventory?tab=copies" + (e.target.checked ? "&review=mastered" : ""); };
+  form.querySelector("[data-surplus]").onchange = e => { copyFilters.surplus = e.target.checked; copyFilters.limit = 80; draw(); };
+  form.querySelector("[data-more]").onclick = () => { copyFilters.limit += 80; draw(); };
+  form.addEventListener("input", e => {
+    if (e.target.type === "number") e.target.form.querySelector("button").disabled = !e.target.validity.valid || e.target.value === e.target.defaultValue;
+  });
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    const editor = e.target, input = editor.querySelector("input"), button = editor.querySelector("button");
+    if (!input.reportValidity()) return;
+    const minimum = input.valueAsNumber;
+    input.disabled = button.disabled = true;
+    const saved = await act("inventory/keep", { accountKey: data.accountKey, uid: editor.dataset.uid, minimum }, "Minimum saved");
+    if (saved) window.dispatchEvent(new CustomEvent("wfp:changed"));
+    else { input.disabled = false; button.disabled = false; }
+  });
+  draw();
+}
+
+let renderVersion = 0;
+let lastState, lastAccount, refreshInventory;
+const signature = state => JSON.stringify([state?.account?.key, state?.sources?.inventory?.synced, state?.sources?.inventory?.imported, state?.sources?.inventory?.pending, state?.tasks?.sig, state?.ready]);
 
 export default {
   id: "inventory",
   title: "Inventory",
   icon: "inventory",
-  async render(view) {
-    const data = await api("inventory");
+  onState(state) {
+    const next = signature(state);
+    if (lastAccount === state?.account?.key && document.querySelector("[data-copies] form button:not(:disabled)")) return;
+    if (refreshInventory && next !== lastState) refreshInventory();
+  },
+  async render(view, params, app) {
+    const version = ++renderVersion;
+    const route = location.hash;
+    const tab = tabs.find(([id]) => id === params.get("tab"))?.[0] || "items";
+    lastState = signature(app.state);
+    lastAccount = app.state?.account?.key;
+    refreshInventory = app.refresh;
+    const data = await api(tab === "items" ? "inventory" : "inventory/" + tab);
+    if (version !== renderVersion || location.hash !== route) return;
+    if (tab !== "items") {
+      view.innerHTML = `<div class="page"><div class="page-head"><h1>Inventory</h1></div>${navigation(tab)}
+        ${tab === "changes" ? changesPanel(data) : '<section data-copies></section>'}</div>`;
+      if (tab === "copies") copiesPanel(view, data, params.get("review") === "mastered");
+      return;
+    }
     const items = data.items || [];
-    if (!items.length) {
+    if (!data.source) {
       view.innerHTML = `<div class="page"><div class="page-head"><div><h1>Inventory</h1></div></div>
-        <div class="empty"><b>No inventory loaded yet</b>Switch on the memory scan in Settings and it is read while the game runs,
-        after login and after each mission. An exported inventory file can be imported there too.</div></div>`;
+        ${navigation(tab)}<div class="empty"><b>No inventory loaded yet</b>${data.pending ? `<p>${fmt(data.pending)} recorded reward pick(s) await the first confirmed inventory.</p>` : ""}Import an inventory JSON file in <a href="#settings">Settings</a>,
+        or enable memory reads for automatic updates after mission syncs.</div></div>`;
       return;
     }
     const c = data.currencies || {};
@@ -53,8 +139,8 @@ export default {
     for (const x of items) kinds.set(group(x.kind), (kinds.get(group(x.kind)) || 0) + 1);
     const chips = [...kinds].sort((a, b) => b[1] - a[1]);
     view.innerHTML = `<div class="page">
-      <div class="page-head"><div><h1>Inventory</h1><p>${fmt(items.length)} stacks · ${esc(data.source || "")} ${ago(data.imported)}</p></div></div>
-      <div class="tiles cur-row">${cur("platinum", c.platinum, "Platinum")}${cur("credits", c.credits, "Credits")}${cur("endo", c.endo, "Endo")}${cur("ducats", c.ducats, "Ducats")}</div>
+      <div class="page-head"><div><h1>Inventory</h1><p>${fmt(items.length)} stacks Â· ${esc(data.source || "")} ${ago(data.imported)}</p></div></div>
+      ${navigation(tab)}${data.pending ? `<p class="muted">Includes ${fmt(data.pending)} recorded ${data.pending === 1 ? "pick or build" : "picks or builds"} awaiting inventory sync.</p>` : ""}<div class="tiles cur-row">${cur("platinum", c.platinum, "Platinum")}${cur("credits", c.credits, "Credits")}${cur("endo", c.endo, "Endo")}${cur("ducats", c.ducats, "Ducats")}</div>
       <div class="toolbar">
         <input type="search" id="q" placeholder="Search the inventory" value="${esc(st.q)}" aria-label="Search">
         <div class="seg" id="sort">${SORTS.map(([v, l]) => `<button data-v="${v}" class="${st.sort === v ? "on" : ""}">${l}</button>`).join("")}</div>
@@ -66,6 +152,7 @@ export default {
         <label class="check"><input type="checkbox" id="mastered" ${st.mastered ? "checked" : ""}>Mastered</label>
         <label>Crafting use <select id="crafting">${[["", "Any"], ["used", "Used in a recipe"], ["none", "No known crafting uses"], ["unknown", "Recipe data unavailable"]].map(([v, l]) => `<option value="${v}" ${st.crafting === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
         <button id="review-weapons" class="ghost" title="Show mastered weapons with no known crafting uses">Review mastered weapons</button>
+        <a class="btn ghost" href="#inventory?tab=copies&amp;review=mastered">Copies to keep for mastered weapons</a>
         <button id="clear-filters" class="ghost">Clear filters</button>
       </div>
       <p class="muted">Crafting uses are based on loaded recipes. Mastery is account-wide; check upgrades, loadouts and individual copies before selling in-game.</p>

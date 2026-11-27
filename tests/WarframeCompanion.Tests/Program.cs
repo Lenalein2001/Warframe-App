@@ -170,14 +170,45 @@ Test("Newer database schema fails closed", () =>
     Throws<InventoryException>(() => new SnapshotStore(file));
 });
 
+Test("Inventory comparison retains the confirmed baseline across v1 migration, restart and rejected observations", () =>
+{
+    var path = Path.Combine(temp, Guid.NewGuid() + ".sqlite");
+    var store = new SnapshotStore(path);
+    store.Commit(Snapshot(100)); store.Commit(Snapshot(90)); store.Commit(Snapshot(80));
+    using (var db = new SqliteConnection($"Data Source={path};Pooling=False"))
+    {
+        db.Open(); using var command = db.CreateCommand();
+        command.CommandText = "ALTER TABLE current_snapshots DROP COLUMN previous_id; DROP TABLE watched_exports; DROP TABLE inventory_actions; PRAGMA user_version=1;";
+        command.ExecuteNonQuery();
+    }
+    store = new(path);
+    Equal(null, store.ConfirmedPair("test").Previous);
+    Equal(100d, store.ConfirmedPair("test").Current!.SourceTimestamp);
+    store.Commit(Snapshot(110)); store.Commit(Snapshot(120, complete: false)); store.Commit(Snapshot(100));
+    store.Commit(Snapshot(110, count: 99)); store.Commit(Snapshot(200, account: "other"));
+    Throws<OperationCanceledException>(() => store.Commit(Snapshot(130), new CancellationToken(true)));
+    var pair = new SnapshotStore(path).ConfirmedPair("test");
+    Equal(100d, pair.Previous!.SourceTimestamp); Equal(110d, pair.Current!.SourceTimestamp);
+    Equal(5L, pair.Current.Counts["/P"]);
+    Equal(null, store.ConfirmedPair("other").Previous);
+    store.ClearCurrent("test"); store.Commit(Snapshot(150));
+    Equal(null, store.ConfirmedPair("test").Previous);
+    Equal(200d, store.ConfirmedPair("other").Current!.SourceTimestamp);
+});
 ServiceTests.Register(Test);
+PendingInventoryTests.Register(Test);
+DuviriTests.Register(Test);
 IntegrationTests.Register(Test);
+MissionRefreshTests.Register(Test);
+FileNotificationTests.Register(Test);
+OcrInstallationTests.Register(Test);
 if (args.Contains("--ocr"))
 {
     Console.WriteLine("OCR executable: " + WarframeCompanion.Services.ScreenCapture.Which("tesseract"));
     IntegrationTests.RegisterOcr(Test);
 }
 string? Option(string key) { var index = Array.IndexOf(args, key); return index >= 0 && index + 1 < args.Length ? args[index + 1] : null; }
+if (Option("--ocr-package") is { } ocrPackage) OcrInstallationTests.RegisterPackage(Test, ocrPackage);
 if (Option("--reward-image") is { } rewardImage) IntegrationTests.RegisterRewardImage(Test, rewardImage, Option("--cache") ?? throw new ArgumentException("--cache is required"), Option("--expected-rewards")?.Split('|'));
 if (Option("--live-memory-directory") is { } liveDirectory) IntegrationTests.RegisterLiveMemory(Test, liveDirectory);
 if (Option("--filter") is { } filter) tests.RemoveAll(test => !test.Item1.Contains(filter, StringComparison.OrdinalIgnoreCase));

@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace WarframeCompanion.Services;
 
-public sealed record LogSignal(string Kind, string? Value = null, string? Id = null, int? Rank = null, int? RankMax = null, double? Time = null, bool Sure = false, bool Historical = false);
+public sealed record LogSignal(string Kind, string? Value = null, string? Id = null, int? Rank = null, int? RankMax = null, double? Time = null, bool Sure = false, bool Historical = false, bool NameNotice = false);
 public sealed class GameLog
 {
     public string? Path { get; private set; }
@@ -17,9 +17,20 @@ public sealed class GameLog
     private (ulong Device, ulong File) identity;
     private long historicalUntil;
     private DateTimeOffset? logStarted;
+    private double? loginTime;
+    internal bool LoginMatchesProcess(DateTimeOffset? processStart) =>
+        Player != null && processStart.HasValue && loginTime >= processStart.Value.ToUnixTimeMilliseconds() / 1000.0;
     private readonly Decoder decoder = Encoding.UTF8.GetDecoder();
     private bool skipPartialLine;
+    private bool pendingHistorical;
     private bool rewardOpen;
+    private string? lastOpenedPath;
+    private string? restartPath;
+    private bool skipOldHistory;
+    private bool restartedLog;
+    internal bool ReadingRestartHistory => restartedLog && offset < historicalUntil;
+    private readonly byte[] tail = new byte[64];
+    private int tailLength;
     private (string Path, DateTime Modified, long Length)? configStamp;
     public event Action<LogSignal>? Signal;
     public event Action? Reset;
@@ -40,17 +51,21 @@ public sealed class GameLog
     {
         var name = Regex.Match(line, @"(?:Sys \[Info\]: Logged in (\S+)\s*$|Logged in (\S+) \(|Player name changed to (\S+))");
         var id = Regex.Match(line, @"(?:AccountId:\s*|Logged in \S+ \()([0-9a-f]{24})\b");
-        if (name.Success) yield return new("login", StripGlyphs(name.Groups.Cast<Group>().Skip(1).First(g => g.Success).Value), id.Success ? id.Groups[1].Value : null);
+        if (name.Success) yield return new("login", StripGlyphs(name.Groups.Cast<Group>().Skip(1).First(g => g.Success).Value), id.Success ? id.Groups[1].Value : null, NameNotice: name.Groups[3].Success);
         else if (id.Success) yield return new("identity", Id: id.Groups[1].Value);
         var badge = Regex.Match(line, @"OnMasteryIconReady1\(Loaded:[^)]*?/Rank(\d+)(?:to(\d+))?_");
         if (badge.Success && int.TryParse(badge.Groups[1].Value, out var rank) && (!badge.Groups[2].Success || int.TryParse(badge.Groups[2].Value, out _)))
             yield return new("badge", Rank: rank, RankMax: badge.Groups[2].Success ? int.Parse(badge.Groups[2].Value, CultureInfo.InvariantCulture) : null);
-        if (new[] { "OpenVoidProjectionRewardScreen", "ProjectionRewardChoice.lua: Pause countdown done", "VoidProjections: GetVoidProjectionRewards", "ProjectionRewardChoice.lua: Got rewards" }.Any(s => line.Contains(s, StringComparison.Ordinal))) yield return new("rewards");
+        if (line.Contains("OpenVoidProjectionRewardScreen", StringComparison.Ordinal)) yield return new("rewards", "open");
+        else if (new[] { "ProjectionRewardChoice.lua: Pause countdown done", "VoidProjections: GetVoidProjectionRewards", "ProjectionRewardChoice.lua: Got rewards" }.Any(s => line.Contains(s, StringComparison.Ordinal))) yield return new("rewards");
         if (line.Contains("Relic reward screen shut down", StringComparison.Ordinal)) yield return new("rewards-closed");
-        if (new[] { "MissionSucceeded", "MissionFailed", "EndOfMatch.lua: Mission Succeeded", "EndOfMatch.lua: Mission Failed", "ExitLevel", "Inventory updated" }.Any(s => line.Contains(s, StringComparison.OrdinalIgnoreCase))) yield return new("sync");
+        if (line.Contains("Inventory updated", StringComparison.OrdinalIgnoreCase)) yield return new("sync", "inventory");
+        else if (new[] { "MissionSucceeded", "MissionFailed", "EndOfMatch.lua: Mission Succeeded", "EndOfMatch.lua: Mission Failed", "ExitLevel" }
+            .Any(s => line.Contains(s, StringComparison.OrdinalIgnoreCase))) yield return new("sync");
         if (line.Contains("RollDuviriOffers", StringComparison.Ordinal) || line.Contains("Cave selection for category:", StringComparison.Ordinal))
         {
             if (line.Contains("Generating new Duviri offers", StringComparison.Ordinal)) yield return new("duviri-start");
+            if (line.Contains("Using cached duviri offers", StringComparison.OrdinalIgnoreCase)) yield return new("duviri-cached");
             var offer = Regex.Match(line, @"(/Lotus/\S+) generated as an (owned|unowned) Cave selection for category:\s*(\d+)");
             if (offer.Success && int.TryParse(offer.Groups[3].Value, out var category)) yield return new("duviri-item", offer.Groups[1].Value, offer.Groups[2].Value, category);
             if (line.Contains("Duviri Seed:", StringComparison.Ordinal)) yield return new("duviri-done");
@@ -61,36 +76,96 @@ public sealed class GameLog
         if (OperatingSystem.IsWindows()) { var p = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Warframe", "EE.log"); return File.Exists(p) ? p : null; }
         return ProtonPaths.FindLog(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Environment.GetEnvironmentVariable("STEAM_COMPAT_DATA_PATH"));
     }
-    public void Poll(string? configured)
+    internal void ProcessChanged(bool running)
     {
-        var path = string.IsNullOrWhiteSpace(configured) ? Discover() : configured;
+        restartPath = running ? lastOpenedPath : null;
+        skipOldHistory = true;
+        restartedLog = false;
+        Player = null;
+        AccountId = null;
+        loginTime = null;
+        logStarted = null;
+        rewardOpen = false;
+        decoder.Reset();
+        pending = "";
+        pendingHistorical = false;
+        skipPartialLine = tailLength > 0 && tail[tailLength - 1] != '\n';
+    }
+
+    public void Poll(string? configured, bool deferReplacement = false) =>
+        PollPath(string.IsNullOrWhiteSpace(configured) ? Discover() : configured, deferReplacement);
+
+    internal void PollPath(string? path, bool deferReplacement)
+    {
         Active = false;
         if (path == null || !File.Exists(path))
         {
             if (Path != null) { Path = null; Player = null; AccountId = null; Scale = null; configStamp = null; Reset?.Invoke(); }
             return;
         }
-        var info = new FileInfo(path); var fileIdentity = NativeEngine.FileIdentity(path);
-        var first = path != Path || info.Length < offset || fileIdentity != identity;
-        if (first) { Path = path; identity = fileIdentity; offset = Math.Max(0, info.Length - 64 * 1024 * 1024); historicalUntil = info.Length; pending = ""; Player = null; AccountId = null; logStarted = null; decoder.Reset(); skipPartialLine = offset > 0; rewardOpen = false; Reset?.Invoke(); }
-        var historical = offset < historicalUntil;
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        if (stream.Length < offset) { Path = null; Player = null; AccountId = null; Reset?.Invoke(); return; }
+        var fileIdentity = NativeEngine.FileIdentity(stream.SafeFileHandle);
+        var length = stream.Length;
+        var replacement = length < offset || fileIdentity != identity;
+        if ((restartPath == path || (deferReplacement && lastOpenedPath == path && length != offset)) &&
+            !replacement && tailLength > 0)
+        {
+            // The restarted game can truncate and regrow the same file between polls.
+            Span<byte> previous = stackalloc byte[tail.Length];
+            stream.Position = offset - tailLength;
+            stream.ReadExactly(previous[..tailLength]);
+            replacement = !previous[..tailLength].SequenceEqual(tail.AsSpan(0, tailLength));
+        }
+        // A new log can arrive one poll before its process is visible. Leave its
+        // first login and mission in the file until they can be bound to that process.
+        if (deferReplacement && replacement && lastOpenedPath == path) return;
+        if (path != Path || replacement)
+        {
+            restartedLog = restartPath == path && replacement;
+            restartPath = null;
+            Path = lastOpenedPath = path;
+            identity = fileIdentity;
+            offset = Math.Max(0, length - 64 * 1024 * 1024);
+            historicalUntil = length;
+            pending = ""; pendingHistorical = false; Player = null; AccountId = null; logStarted = null;
+            decoder.Reset(); skipPartialLine = offset > 0; tailLength = 0; rewardOpen = false;
+            Reset?.Invoke();
+        }
+        else if (skipOldHistory && offset < historicalUntil)
+        {
+            offset = Math.Min(length, historicalUntil);
+            // Never finish a line or replay a login left behind by the old process.
+            if (offset > 0) { stream.Position = offset - 1; skipPartialLine = stream.ReadByte() != '\n'; }
+            tailLength = 0;
+        }
+        skipOldHistory = false;
+        var historical = offset < historicalUntil;
         stream.Seek(offset, SeekOrigin.Begin);
         // Do not mix historical and newly appended events in one batch.
         var available = (historical ? Math.Min(historicalUntil, stream.Length) : stream.Length) - offset;
         var bytes = new byte[(int)Math.Max(0, Math.Min(8 * 1024 * 1024, available))]; var count = stream.Read(bytes); offset += count;
+        if (count > 0)
+        {
+            var added = Math.Min(tail.Length, count);
+            var retained = Math.Min(tailLength, tail.Length - added);
+            tail.AsSpan(tailLength - retained, retained).CopyTo(tail);
+            bytes.AsSpan(count - added, added).CopyTo(tail.AsSpan(retained));
+            tailLength = retained + added;
+        }
         var chars = new char[Encoding.UTF8.GetMaxCharCount(count)];
         var decoded = decoder.GetChars(bytes, 0, count, chars, 0, false);
         var lines = (pending + new string(chars, 0, decoded)).Split('\n'); pending = "";
-        foreach (var line in lines.SkipLast(1))
+        for (var index = 0; index < lines.Length - 1; index++)
         {
+            var line = lines[index];
+            // A pre-existing line remains historical even if its newline arrives later.
+            var lineHistorical = historical || (index == 0 && pendingHistorical);
             if (skipPartialLine) { skipPartialLine = false; continue; }
             if (line.Length > 65536) continue;
             var header = Regex.Match(line, @"\[UTC:\s*(.*?)\]");
             if (header.Success && DateTimeOffset.TryParseExact(Regex.Replace(header.Groups[1].Value, @"\s+", " "), ["ddd MMM d HH:mm:ss yyyy", "ddd MMM dd HH:mm:ss yyyy"], CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var began)) logStarted = began;
             var prefix = Regex.Match(line, @"^\s*(\d+(?:\.\d+)?)");
-            double? time = historical ? null : J.Now;
+            double? time = lineHistorical ? null : J.Now;
             if (logStarted != null && prefix.Success && double.TryParse(prefix.Value, CultureInfo.InvariantCulture, out var elapsed))
             {
                 var candidateTime = logStarted.Value.ToUnixTimeMilliseconds() / 1000.0 + elapsed;
@@ -98,15 +173,29 @@ public sealed class GameLog
             }
             foreach (var signal in Parse(line.TrimEnd('\r')))
             {
-                if (!historical && signal.Kind == "rewards") { if (rewardOpen && !line.Contains("OpenVoidProjectionRewardScreen", StringComparison.Ordinal)) continue; rewardOpen = true; }
-                if (!historical && signal.Kind == "rewards-closed") rewardOpen = false;
-                if (signal.Kind == "login") { Player = signal.Value; AccountId = signal.Id; }
+                if (!lineHistorical && signal.Kind == "rewards") { if (rewardOpen && !line.Contains("OpenVoidProjectionRewardScreen", StringComparison.Ordinal)) continue; rewardOpen = true; }
+                if (!lineHistorical && signal.Kind == "rewards-closed") rewardOpen = false;
+                if (signal.Kind == "login")
+                {
+                    // For timestamp-free history the file's creation is a conservative
+                    // lower bound. Its last write might belong to a different session.
+                    var earliest = time ?? (logStarted ?? File.GetCreationTimeUtc(stream.SafeFileHandle)).ToUnixTimeMilliseconds() / 1000.0;
+                    loginTime = Math.Min(earliest, J.Now);
+                    if (!signal.NameNotice || signal.Id != null || !string.Equals(Player, signal.Value, StringComparison.OrdinalIgnoreCase))
+                        AccountId = signal.Id;
+                    Player = signal.Value;
+                    if (!lineHistorical) restartPath = null;
+                }
                 if (signal.Kind == "identity") AccountId = signal.Id;
-                // Never act on historical mission/reward events while opening an existing log.
-                if (!historical || signal.Kind is "login" or "identity" or "badge" || signal.Kind.StartsWith("duviri-", StringComparison.Ordinal)) Signal?.Invoke(signal with { Time = time, Historical = historical });
+                // Only login and inventory events from a verified replacement log catch up.
+                // Existing reward screens and signals from the initial attachment stay historical.
+                var replay = lineHistorical && !(restartedLog && signal.Kind is ("login" or "sync"));
+                if (!replay || signal.Kind is "login" or "identity" or "badge" || signal.Kind.StartsWith("duviri-", StringComparison.Ordinal)) Signal?.Invoke(signal with { Time = time, Historical = replay });
             }
-            foreach (var candidate in Candidates(line, Player)) Signal?.Invoke(candidate with { Time = time });
+            foreach (var candidate in Candidates(line, Player)) Signal?.Invoke(candidate with { Time = time, Historical = lineHistorical });
         }
+        if (count > 0)
+            pendingHistorical = bytes[count - 1] != '\n' && (historical || (pendingHistorical && lines.Length == 1));
         if (lines[^1].Length > 65536) skipPartialLine = true;
         if (!skipPartialLine) pending = lines[^1];
         Active = true;

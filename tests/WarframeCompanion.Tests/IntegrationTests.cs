@@ -187,7 +187,9 @@ public static class IntegrationTests
             var settings = Settings.Defaults(); settings["ee_log_path"] = path; settings["ocr_enabled"] = false;
             new StateStore(Path.Combine(directory, "state.sqlite")).Write("settings", settings);
             int? detected = null;
-            var runtime = new CompanionRuntime(directory, true) { FindGameProcess = () => detected };
+            var runtime = new CompanionRuntime(directory, true) {
+                FindGameProcess = () => detected, GameStartedAt = _ => DateTimeOffset.UtcNow.AddMinutes(-1)
+            };
             try {
                 runtime.StartGameWatcher();
                 Check(runtime.Summary()["account"]?["key"] != null, "Log account missing");
@@ -222,6 +224,62 @@ public static class IntegrationTests
             new SnapshotStore(Path.Combine(directory, "companion.sqlite")).ClearCurrent("first");
             Check(store.CurrentMetadata("first") == null, "External clear left stale metadata");
         }));
+        test("Inventory comparison and keep minimum follow an account through linking, switching and restart", () => InDirectory(directory =>
+        {
+            var state = new StateStore(Path.Combine(directory, "state.sqlite"));
+            var snapshots = new SnapshotStore(Path.Combine(directory, "companion.sqlite"));
+            state.Write("registry", new RegistryState { Active = "first", Accounts = [new() { Key = "first" }, new() { Key = "second" }] });
+            var runtime = new CompanionRuntime(directory, true);
+            try
+            {
+                void Post(string route, object value) => runtime.Post(route, J.Node(value), CancellationToken.None).GetAwaiter().GetResult();
+                JsonNode Get(string route) => runtime.Get(route, new Dictionary<string, string>());
+                void Save(string key, object minimum) => Post("inventory/keep", new { uid = "/P", accountKey = key, minimum });
+                const string linked = "0123456789abcdef01234567";
+                foreach (var sync in new[] { 100, 200 })
+                    runtime.Post("inventory/import", JsonNode.Parse($$"""{"MiscItems":[{"ItemType":"/P","ItemCount":{{sync / 10}}}],"Suits":[],"Recipes":[],"XPInfo":[],"LastInventorySync":{{sync}}}""")!, CancellationToken.None).GetAwaiter().GetResult();
+                Save("first", 4);
+                Post("account/set", new { id = linked });
+                Check(J.N(J.A(Get("inventory/changes"), "items").Single(), "delta") == 10, "Linking lost the comparison baseline");
+                snapshots.SeedLinkedAccount("first", linked);
+                Check(snapshots.History(linked).Count == 2 && snapshots.ConfirmedPair(linked).Previous?.AccountId == linked, "Link replay duplicated or mislabeled snapshots");
+                Post("account/switch", new { key = "second" });
+                try { Save("first", 9); throw new Exception("Stale editor wrote to new account"); } catch (InventoryException) { }
+                Check(!J.A(Get("inventory/copies"), "copies").Any() && Get("inventory/changes")["from"] == null, "Account B saw account A data");
+                foreach (var invalid in new object[] { -1, 1.5, "4", 2147483648L })
+                    try { Save("second", invalid); throw new Exception("Invalid keep minimum accepted"); } catch (InventoryException) { }
+                Save("second", 8); Save("second", 0);
+                Check(!J.A(Get("inventory/copies"), "copies").Any(), "Zero did not clear minimum");
+                runtime.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                runtime = new CompanionRuntime(directory, true);
+                Post("account/switch", new { key = "first" });
+                var row = J.A(Get("inventory/copies"), "copies").Single();
+                Check(J.N(row, "minimum") == 4 && J.N(row, "spare") == 16, "Minimum or ownership was lost on restart");
+            }
+            finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
+        test("File notifications suppress unchanged anonymous exports across restarts and account switches", () => InDirectory(directory =>
+        {
+            var state = new StateStore(Path.Combine(directory, "state.sqlite"));
+            state.Write("registry", new RegistryState { Active = "first", Accounts = [new() { Key = "first" }, new() { Key = "second" }] });
+            var snapshots = new SnapshotStore(Path.Combine(directory, "companion.sqlite"));
+            const string partial = """{"MiscItems":[]}""";
+            const string complete = """{"MiscItems":[],"Suits":[],"XPInfo":[],"Recipes":[],"LastInventorySync":100}""";
+            void Read(string text, string? next = null)
+            {
+                var runtime = new CompanionRuntime(directory, true);
+                try
+                {
+                    using var input = new MemoryStream(Encoding.UTF8.GetBytes(text));
+                    runtime.ImportWatchedInventory(input, CancellationToken.None, Path.Combine(directory, "export.json")).GetAwaiter().GetResult();
+                    if (next != null) runtime.Post("account/switch", J.Node(new { key = next }), CancellationToken.None).GetAwaiter().GetResult();
+                }
+                finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+            }
+            Read(partial); Read(partial); Read(complete); Read(complete + " ", "second"); Read(complete + " ");
+            Check(snapshots.History("first").Count == 2, "Restart or repeat sync duplicated history");
+            Check(snapshots.History("second").Count == 0, "An old anonymous file was applied to the new account");
+        }));
         test("Watched inventory cannot cross an account switch during reading", () => InDirectory(directory =>
         {
             new StateStore(Path.Combine(directory, "state.sqlite")).Write("registry", new RegistryState { Active = "first", Accounts = [new() { Key = "first" }, new() { Key = "second" }] });
@@ -246,6 +304,26 @@ public static class IntegrationTests
             Check(!GameLog.Parse("OnMasteryIconReady1(Loaded:/Rank99999999999999999999_icon)").Any(), "Overflow rank accepted");
             Check(!GameLog.Parse("RollDuviriOffers /Lotus/Item generated as an owned Cave selection for category: 99999999999999999999").Any(s => s.Kind == "duviri-item"), "Overflow category accepted");
         });
+        test("Stalled hotkey registration times out and late completion cleans up safely", () => InDirectory(directory =>
+        {
+            if (!OperatingSystem.IsWindows()) return;
+            var runtime = new CompanionRuntime(directory, true);
+            var fake = new StalledHotkeys();
+            var hotkeys = new WarframeCompanion.Desktop.NativeHotkeys(runtime, "http://127.0.0.1:8642", fake);
+            try
+            {
+                var started = System.Diagnostics.Stopwatch.StartNew();
+                try { hotkeys.Register(); throw new Exception("Stalled registration succeeded"); }
+                catch (InventoryException e) { Check(e.Message.Contains("timed out"), "Wrong failure for stalled registration"); }
+                Check(started.Elapsed < TimeSpan.FromSeconds(4), "Registration blocked indefinitely");
+                fake.Release.Set();
+                Check(fake.Cleaned.Wait(TimeSpan.FromSeconds(2)), "Late worker did not unregister keys");
+                hotkeys.Dispose();
+                try { hotkeys.Register(); throw new Exception("Registration started after disposal"); }
+                catch (ObjectDisposedException) { }
+            }
+            finally { fake.Release.Set(); hotkeys.Dispose(); runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
         test("Deferred desktop startup serves the UI before game monitoring begins", () => InDirectory(directory =>
         {
             using var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start();
@@ -334,24 +412,141 @@ public static class IntegrationTests
             typeof(CompanionRuntime).GetProperty("GameProcess")!.SetValue(runtime, 123);
             using var entered = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
             CancellationToken observed = default;
+            var failAfterCancellation = false;
             runtime.ReadMemory = (_, _, token, _) => {
                 observed = token; entered.Set(); release.Wait(TimeSpan.FromSeconds(10));
+                if (failAfterCancellation) throw new IOException("Fixture: target closed during cancellation.");
                 return new(InventoryParser.Parse(Encoding.UTF8.GetBytes("{\"MiscItems\":[],\"LastInventorySync\":100}"), id), ["MiscItems"]);
             };
             Task? capture = null;
             try
             {
-                capture = runtime.CaptureMemory(123, CancellationToken.None);
+                capture = runtime.Post("memory/read", new JsonObject(), CancellationToken.None);
                 Check(entered.Wait(TimeSpan.FromSeconds(5)), "Synthetic capture did not start");
+                try { runtime.Post("memory/read", new JsonObject(), default).GetAwaiter().GetResult(); throw new Exception("Concurrent read was accepted"); }
+                catch (InventoryException e) when (e.Message.Contains("already running")) { }
                 runtime.Post("settings", JsonNode.Parse("{\"memory_scan_enabled\":false}")!, CancellationToken.None).GetAwaiter().GetResult();
                 Check(observed.IsCancellationRequested, "Disabling did not cancel the active capture");
                 release.Set(); capture.GetAwaiter().GetResult();
                 Check(!runtime.ScanRunning, "Cancelled scanner stayed running");
                 Check(new SnapshotStore(Path.Combine(directory, "companion.sqlite")).History(id).Count == 0, "Cancelled result was persisted");
+                entered.Reset();
+                release.Reset();
+                failAfterCancellation = true;
+                runtime.Post("settings", new JsonObject { ["memory_scan_enabled"] = true }, default).GetAwaiter().GetResult();
+                capture = runtime.Post("memory/read", new JsonObject(), default);
+                Check(entered.Wait(TimeSpan.FromSeconds(5)), "Second synthetic capture did not start");
+                runtime.Post("settings", new JsonObject { ["memory_scan_enabled"] = false }, default).GetAwaiter().GetResult();
+                release.Set();
+                capture.GetAwaiter().GetResult();
+                Check(!runtime.ScanRunning && runtime.ScanError == null, "Cancelled read reported a late I/O failure");
                 using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
                 try { MemoryProvider.Scan(int.MaxValue, id, cancelled.Token); throw new Exception("Cancelled scan proceeded"); } catch (OperationCanceledException) { }
             }
             finally { release.Set(); capture?.GetAwaiter().GetResult(); runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
+        test("Manual memory capture rejects unverified inventory", () => InDirectory(directory =>
+        {
+            const string id = "0123456789abcdef01234567";
+            var path = Path.Combine(directory, "EE.log");
+            File.WriteAllText(path, "Sys [Info]: Logged in Fixture\n");
+            var store = new StateStore(Path.Combine(directory, "state.sqlite"));
+            store.Write("registry", new RegistryState { Active = "fixture", Accounts = [new() { Key = "fixture", Name = "Fixture", Id = id }] });
+            var settings = Settings.Defaults();
+            settings["ee_log_path"] = path;
+            settings["memory_scan_enabled"] = true;
+            store.Write("settings", settings);
+            var runtime = new CompanionRuntime(directory, true);
+            runtime.FindGameProcess = () => 123;
+            var reads = 0;
+            runtime.ReadMemory = (_, account, _, _) =>
+            {
+                Interlocked.Increment(ref reads);
+                return new(InventoryParser.Parse("{\"MiscItems\":[],\"LastInventorySync\":100}"u8.ToArray(), account), ["MiscItems"]);
+            };
+            try
+            {
+                runtime.StartGameWatcher();
+                Check(SpinWait.SpinUntil(() => J.B(runtime.Get("state", new Dictionary<string, string>())["account"]?["playing"]), TimeSpan.FromSeconds(5)), "Fixture did not establish a game session");
+                Check(Volatile.Read(ref reads) == 0, "Historical login started a read");
+                var result = runtime.Post("memory/read", new JsonObject(), default).GetAwaiter().GetResult();
+                Check(Volatile.Read(ref reads) == 1 && J.S(result, "error")?.Contains("unverified") == true, "Explicit read did not reject unverified inventory");
+                Check(new SnapshotStore(Path.Combine(directory, "companion.sqlite")).History(id).Count == 0, "Unverified result was persisted");
+            }
+            finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        }));
+        test("Mission bursts suppress late duplicates and preserve a later inventory sync", () => InDirectory(directory =>
+        {
+            const string id = "0123456789abcdef01234567";
+            var path = Path.Combine(directory, "EE.log");
+            File.WriteAllText(path, "Sys [Info]: Logged in Fixture\nMissionSucceeded\nInventory updated");
+            var store = new StateStore(Path.Combine(directory, "state.sqlite"));
+            store.Write("registry", new RegistryState { Active = "fixture", Accounts = [new() { Key = "fixture", Name = "Fixture", Id = id }] });
+            var settings = Settings.Defaults();
+            settings["ee_log_path"] = path;
+            settings["memory_scan_enabled"] = true;
+            store.Write("settings", settings);
+            var runtime = new CompanionRuntime(directory, true);
+            long clock = 1000;
+            var polls = 0;
+            runtime.FindGameProcess = () => { Interlocked.Increment(ref polls); return 123; };
+            runtime.MemoryClock = () => Interlocked.Read(ref clock);
+            var reads = 0;
+            var syncs = 0;
+            using var finishFirst = new ManualResetEventSlim();
+            runtime.ReadMemory = (_, account, token, _) =>
+            {
+                if (Interlocked.Increment(ref reads) == 1) finishFirst.Wait(TimeSpan.FromSeconds(12), token);
+                var snapshot = InventoryParser.Parse("{\"MiscItems\":[],\"LastInventorySync\":100}"u8.ToArray(), account);
+                return new(snapshot with { IdentityVerified = true }, ["MiscItems", "Suits", "Recipes", "XPInfo"]);
+            };
+            try
+            {
+                void WaitFor(Func<bool> condition, string message) =>
+                    Check(SpinWait.SpinUntil(condition, TimeSpan.FromSeconds(8)), message);
+                void Tick(long now) => Interlocked.Exchange(ref clock, now);
+                void AppendSyncs(int count, string lines)
+                {
+                    File.AppendAllText(path, lines);
+                    WaitFor(() => Volatile.Read(ref syncs) >= count, "Fixture sync was not observed");
+                    Check(Volatile.Read(ref syncs) == count, "Unexpected historical sync was emitted");
+                }
+                void WaitForPolls()
+                {
+                    var currentPolls = Volatile.Read(ref polls);
+                    WaitFor(() => Volatile.Read(ref polls) >= currentPolls + 2, "Game watcher stopped polling");
+                }
+                runtime.StartGameWatcher();
+                WaitFor(() => J.B(runtime.Summary()["account"]?["playing"]), "Fixture did not establish a game session");
+                runtime.Log.Signal += signal => { if (signal.Kind == "sync") Interlocked.Increment(ref syncs); };
+                AppendSyncs(3, "\nMissionSucceeded\nExitLevel\nInventory updated\n");
+                Tick(4000);
+                WaitFor(() => Volatile.Read(ref reads) == 1, "Live mission did not start a read");
+                Tick(11000);
+                AppendSyncs(6, "EndOfMatch.lua: Mission Succeeded\nExitLevel\nInventory updated\n");
+                finishFirst.Set();
+                var snapshots = new SnapshotStore(Path.Combine(directory, "companion.sqlite"));
+                WaitFor(() => snapshots.Current(id) != null, "Live mission sync did not save verified inventory");
+                Tick(20000);
+                WaitForPolls();
+                Check(Volatile.Read(ref reads) == 1, "Late mission messages queued a duplicate read");
+                AppendSyncs(7, "MissionFailed\n");
+                Tick(27000);
+                WaitFor(() => Volatile.Read(ref reads) == 2, "A later mission without an inventory message was missed");
+                Tick(31000);
+                AppendSyncs(8, "Inventory updated\n");
+                Tick(38000);
+                WaitFor(() => Volatile.Read(ref reads) == 3, "Late inventory update after a fallback read was missed");
+                Tick(54000);
+                AppendSyncs(9, "MissionSucceeded\n");
+                foreach (var value in new[] { false, true })
+                    runtime.Post("settings", new JsonObject { ["memory_scan_enabled"] = value }, default).GetAwaiter().GetResult();
+                Tick(61000);
+                WaitForPolls();
+                Check(Volatile.Read(ref reads) == 3, "A queued read survived disabling");
+                Check(snapshots.History(id).Count == 1, "Duplicate syncs grew snapshot history");
+            }
+            finally { finishFirst.Set(); runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
         }));
         test("Desktop startup does not wait for historical game log processing", () => InDirectory(directory =>
         {
@@ -607,6 +802,9 @@ public static class IntegrationTests
             Check(J.S(UpdateService.LatestRelease([release, newer], "0.9.0", "win-x64")!, "version") == "0.12.0", "Chronology displaced newest version");
             newer["html_url"] = "https://github.com.evil.invalid/Lenalein2001/Warframe-App/releases/tag/v0.12.0";
             Check(UpdateService.NewerRelease(newer, "0.9.0", "win-x64") == null, "Foreign host offered");
+            release["assets"] = new JsonArray(new JsonObject { ["name"] = "Warframe Companion.exe" });
+            Check(UpdateService.NewerRelease(release, "0.9.0", "win-x64") != null, "Single-file Windows release missing");
+            Check(UpdateService.NewerRelease(release, "0.9.0", "linux-x64") == null, "Single-file Windows release offered on Linux");
             release["assets"] = new JsonArray(); Check(UpdateService.NewerRelease(release, "0.9.0", "win-x64") == null, "Rust release offered");
         });
         test("Settings reject fractional values and allow disabling hotkeys", () =>
@@ -752,35 +950,6 @@ public static class IntegrationTests
     }
     public static void RegisterLiveMemory(Action<string, Action> test, string directory)
     {
-        test("Live game watcher commits a capture to an isolated account store", () => InDirectory(target =>
-        {
-            var source = new StateStore(Path.Combine(directory, "state.sqlite"));
-            var registry = source.Read<RegistryState>("registry") ?? throw new Exception("Known accounts are required.");
-            var state = new StateStore(Path.Combine(target, "state.sqlite"));
-            state.Write("registry", registry);
-            var settings = Settings.Defaults(); settings["memory_scan_enabled"] = true; settings["ocr_enabled"] = false;
-            state.Write("settings", settings);
-            var sourceSnapshots = new SnapshotStore(Path.Combine(directory, "companion.sqlite"));
-            var snapshots = new SnapshotStore(Path.Combine(target, "companion.sqlite"));
-            foreach (var account in registry.Accounts)
-                if (sourceSnapshots.Current(account.Id ?? account.Key) is { } saved) snapshots.Commit(saved);
-            var runtime = new CompanionRuntime(target, true);
-            try
-            {
-                runtime.Start();
-                var watch = System.Diagnostics.Stopwatch.StartNew();
-                while (watch.Elapsed < TimeSpan.FromSeconds(60))
-                {
-                    if (registry.Accounts.Any(a => snapshots.Current(a.Id ?? a.Key)?.Provider == "game memory")) break;
-                    if (runtime.ScanError != null) throw new Exception(runtime.ScanError);
-                    Thread.Sleep(250);
-                }
-                Check(registry.Accounts.Any(a => snapshots.Current(a.Id ?? a.Key) is { Provider: "game memory", Complete: true, IdentityVerified: true }), "Game watcher did not promote a verified capture.");
-                Check(snapshots.IntegrityCheck() == "ok", "Live capture damaged the isolated database.");
-                Console.WriteLine($"Live watcher saved verified inventory in {watch.Elapsed.TotalSeconds:F2} seconds; original application data was untouched.");
-            }
-            finally { runtime.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
-        }));
         test("Live native game-memory capture identifies the expected account", () =>
         {
             var runtime = new CompanionRuntime(directory, true);
@@ -843,6 +1012,7 @@ public static class IntegrationTests
         await Post("settings", "{\"memory_scan_enabled\":true,\"ocr_enabled\":false}");
         var settings = await Get("/api/settings"); Check(J.B(settings["memory_scan_enabled"]) && !J.B(settings["ocr_enabled"]), "Boolean settings could not be toggled");
         await Post("settings", "{\"memory_scan_enabled\":false,\"ocr_enabled\":true}");
+        await Post("memory/read", "{}", HttpStatusCode.BadRequest);
         await Post("manual/count", "{\"uid\":\"/Part\",\"count\":1.2}", HttpStatusCode.BadRequest);
         await Post("account/set", "{\"id\":\"0123456789abcdef01234567\"}");
         await Post("account/set", "{\"key\":\"missing\",\"id\":\"0123456789abcdef01234567\"}", HttpStatusCode.BadRequest);
@@ -850,10 +1020,33 @@ public static class IntegrationTests
         await Post("profile/import", "{\"AccountId\":\"abcdef0123456789abcdef01\",\"XPInfo\":[]}", HttpStatusCode.BadRequest);
         var imported = await Post("inventory/import", "{\"MiscItems\":[{\"ItemType\":\"/Part\",\"ItemCount\":7}],\"Suits\":[],\"Recipes\":[],\"XPInfo\":[],\"LastInventorySync\":100}");
         Check(J.B(imported["promoted"]), "Complete import was not promoted");
+        var tab = await Get("/api/inventory/copies");
+        var account = J.S(tab, "accountKey");
+        Check(account != null && J.N(J.A(tab, "copies").Single(), "owned") == 7, "Copies endpoint missed imported inventory");
+        await Post("inventory/keep", J.Node(new { uid = "/Part", minimum = 2, accountKey = account }).ToJsonString());
+        Check(J.N(J.A(await Get("/api/inventory/copies"), "copies").Single(), "spare") == 5, "Keep minimum was not reflected over HTTP");
+        Check((await Get("/api/inventory/changes"))["from"] == null, "First sync invented a baseline");
+        server.Runtime.History.Record(J.Node(new { t = 110, items = new[] { new { uid = "/Part", name = "Fixture part" } } }), account);
+        var screen = J.A(await Get("/api/history"), "entries").Single();
+        var pick = new JsonObject { ["accountKey"] = account, ["id"] = J.S(screen, "id"), ["uid"] = "/Part", ["previous"] = null };
+        await Post("rewards/pick", pick.ToJsonString()); await Post("rewards/pick", pick.ToJsonString());
+        Check(J.N(J.A(await Get("/api/inventory"), "items").Single(), "count") == 8, "HTTP reward retry miscounted the item");
+        Check(J.S(J.A(await Get("/api/history"), "entries").Single(), "picked") == "/Part", "HTTP history lost the pick");
         var partial = await Post("inventory/import", "{\"MiscItems\":[],\"LastInventorySync\":101}"); Check(!J.B(partial["promoted"]), "Partial import erased confirmed data");
         var store = new SnapshotStore(Path.Combine(directory, "companion.sqlite")); Check(store.Current("0123456789abcdef01234567")!.Counts["/Part"] == 7, "Confirmed count lost");
         await Post("inventory/clear", "{}"); Check(store.Current("0123456789abcdef01234567") == null, "Clear did not clear current pointer");
         Check(store.History("0123456789abcdef01234567").Count == 2, "Clear destroyed history");
         using var empty = await client.PostAsync("/api/window/show", null); Check(empty.IsSuccessStatusCode, "Empty hotkey POST failed");
     }
+}
+
+internal sealed class StalledHotkeys : WarframeCompanion.Desktop.IWindowsHotkeys
+{
+    public ManualResetEventSlim Release { get; } = new();
+    public ManualResetEventSlim Cleaned { get; } = new();
+    public uint CreateMessageQueue() => 1;
+    public bool Register(int id, uint modifiers, uint key) { Release.Wait(); return true; }
+    public void Unregister(int id) { if (id == 2) Cleaned.Set(); }
+    public bool Next(out bool rewards) { rewards = false; return false; }
+    public void Stop(uint id) { }
 }

@@ -53,7 +53,7 @@ public sealed class GameRelic(string name)
     public Dictionary<string, RelicReward> Rewards { get; } = [];
 }
 public sealed record CraftNeed(string Uid, string Name, long Count, string? Image = null);
-public sealed record PartRecipe(string Result, long Quantity, long? Credits, long? Seconds, List<CraftNeed> Ingredients);
+public sealed record PartRecipe(string Result, long Quantity, long? Credits, long? Seconds, List<CraftNeed> Ingredients, bool? ConsumeOnUse = null);
 public sealed record Craft(string Uid, string Name, string Kind, string? Image, long MasteryReq, long Quantity, List<CraftNeed> Needs);
 public sealed record LookupItem(string Uid, string Name, string Category, string? Image);
 public sealed record InventoryEntry(string? Name, string Kind, string? Icon, string? Result, long? Rank, string? Rarity, bool Hidden);
@@ -151,7 +151,8 @@ public sealed class Catalog
                 needs.Add(new(id, cat.Names.GetValueOrDefault(id) ?? CamelName(id), J.N(need, "ItemCount")));
             }
             if (valid) cat.Recipes[uid] = new(result, Math.Max(1, J.N(recipe, "num", 1)), J.Get(recipe, "buildPrice") == null ? null : J.N(recipe, "buildPrice"),
-                J.Get(recipe, "buildTime") == null ? null : J.N(recipe, "buildTime"), needs);
+                J.Get(recipe, "buildTime") == null ? null : J.N(recipe, "buildTime"), needs,
+                J.Get(recipe, "consumeOnUse") is JsonValue flag && flag.TryGetValue<bool>(out var consumed) ? consumed : null);
         }
         var partInfo = new Dictionary<string, (string Name, string? Slug)>();
         foreach (var r in File("Relics"))

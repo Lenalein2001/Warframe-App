@@ -2,7 +2,7 @@ name: Linux packages
 on:
   push:
     branches: [senpai]
-    paths: ['assets/**', 'src/**', 'web/**', 'tests/**', 'tools/**', 'packaging/**', '*.props', 'docs/USAGE.md', '.github/workflows/linux.yml']
+    paths: ['assets/**', 'src/**', 'web/**', 'tests/**', 'tools/**', 'packaging/**', '*.props', 'VERSION', 'docs/USAGE.md', '.github/workflows/linux.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,7 +23,7 @@ jobs:
         run: |
           python tests/archive.test.py
           python tests/portable-launcher.test.py
-          bash tools/package-linux.sh 0.1.1
+          bash tools/package-linux.sh
       - name: Test extracted portable archive and installed package
         run: |
           mkdir -p artifacts/linux-extracted

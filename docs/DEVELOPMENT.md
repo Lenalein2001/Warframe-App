@@ -58,24 +58,28 @@ Partial inventory observations cannot replace confirmed inventory. Older or unor
 
 ```powershell
 ./tools/build-ocr.ps1 -OutputDirectory artifacts/ocr
-./tools/publish-companion.ps1 -Runtime win-x64 -TesseractRoot artifacts/ocr
+python tools/package-ocr.py artifacts/ocr artifacts/optional-ocr/WarframeCompanion-OCR-win-x64.zip --descriptor src/Services/ocr-package.json
+./tools/publish-companion.ps1 -Runtime win-x64
+./tools/publish-single-file.ps1
 ```
 
 The OCR build script compiles pinned Tesseract and Leptonica sources with MSVC into one static executable. It omits network, archive, legacy recognition and external image-codec dependencies. The app decodes screenshots with Skia and passes lossless PPM pixels to OCR; this minimal executable is not a general-purpose PNG/JPEG command-line reader. Tesseract's own tool removes the unused legacy classifier while retaining the original English LSTM model and dictionaries; source archives and model files are checked by SHA-256. Choose a fresh output directory to prevent stale DLLs entering the bundle.
 
-Packages include the desktop host, services, native libraries, embedded UI, and OCR bundle with dependency licenses. `Portable.cmd` selects portable storage; launching the executable normally selects per-user storage. Framework-dependent packages require both .NET 10 and ASP.NET Core 10 runtimes. Self-contained packages include these runtimes; WebView2 is still an OS prerequisite.
+Standard packages include the desktop host, services, native libraries and embedded UI. OCR is optional; `-IncludeOcr -TesseractRoot PATH` retains an offline bundle when explicitly needed. Both formats require .NET 10 and ASP.NET Core 10 runtimes; WebView2 remains a Windows prerequisite.
+
+The OCR descriptor is embedded in Services and pins the archive and every extracted file. Prepare the optional asset and descriptor before publishing the application, then publish the exact asset at the descriptor URL. Until that asset is published, the button reports that the download is unavailable. Do not replace the asset with different bytes. No remote manifest or caller-supplied executable URL is accepted. Linux uses distribution-managed OCR packages.
 
 Package output goes to a unique directory under `artifacts`. No account data is packaged. Do not infer desktop sizes from the older inventory-only CLI artifacts.
 
 The separate `src/App` CLI remains available for inventory validation, explicit complete imports, current/history inspection, normalized export, SQLite backup and integrity checking. Its data-directory defaults differ from the desktop; supply `--data-dir` when using it against a desktop snapshot database.
 
-See `docs/migration/STATUS.md` and `docs/migration/VALIDATION.md` in the repository for implemented scope and outstanding evidence.
+Run the regression and package smoke tests before distributing a build. Headless checks do not establish visual or live-game behavior.
 
 ## Inspecting the application
 
-Release packages contain ordinary managed assemblies. Open `app/WarframeCompanion.Desktop.dll`, `app/Host.dll`, `app/Services.dll`, `app/Core.dll` and `app/Persistence.dll` in ILSpy (or the corresponding files in the installed directory). Inspect the web interface under Host's embedded `web/` resources. The small native launcher and .NET apphost executable are not where the C# services live.
+Windows packages contain ordinary managed assemblies inside the executable. Open the executable in ILSpy to inspect the bundled assemblies and Host's embedded `web/` resources. The single-file portable extracts only native libraries; managed assemblies load from the bundle. The multi-file package keeps native libraries beside its executable.
 
-The repository's publishing scripts do not use obfuscation, packers, managed native-AOT compilation or single-file extraction. Managed type/method names remain available. Release packages omit separate PDB files; local `dotnet build src/Desktop/Desktop.csproj -c Debug` produces managed debug symbols. For native debugging, use `./tools/build-native.ps1 -Configuration Debug` on Windows or configure CMake with `-DCMAKE_BUILD_TYPE=Debug` on Linux. Native source is in `src/Native/`; optimized machine code is not equivalent to recoverable original C++ source.
+Publishing uses neither obfuscation nor managed native-AOT compilation. Compression and trimming are disabled. Release builds omit PDB files; local Debug builds retain symbols. Native source is in `src/Native/`; optimized machine code is not equivalent to recoverable original C++ source.
 
 Match source to the build's commit before reviewing it. Check `src/Native/memory.cpp` for OS process access, `src/Services/MemoryProvider.cs` for extraction, `src/Services/CompanionRuntime.Game.cs` for scheduling and persistence, and `src/Host/CompanionServer.cs` / `LocalApiCredential.cs` for local API authentication. Review build scripts and dependencies as well: readable source and passing tests are not a publisher approval or a guarantee against all security defects. Do not share account databases, raw memory, screenshots, or `api-*.auth` credentials when reporting findings.
 

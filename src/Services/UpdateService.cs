@@ -4,7 +4,7 @@ namespace WarframeCompanion.Services;
 
 public sealed class UpdateService(CachedJson cache)
 {
-    public const string Version = "0.1.1";
+    public static readonly string Version = typeof(UpdateService).Assembly.GetName().Version!.ToString(3);
     public JsonNode? Available { get; private set; }
     public static JsonNode? NewerRelease(JsonNode release, string current, string? platform = null)
     {
@@ -14,9 +14,10 @@ public sealed class UpdateService(CachedJson cache)
         platform ??= OperatingSystem.IsWindows() ? "win-x64" : OperatingSystem.IsLinux() ? "linux-x64" : "unsupported";
         // The fork also contains historical Rust releases. Only offer a release with this application's assets.
         var prefix = "WarframeCompanion-" + platform;
-        string[] packages = [prefix + ".zip", prefix + "-portable.zip", prefix + ".deb", prefix + "-portable.tar.gz", prefix + "-Setup.exe",
+        string[] packages = [prefix + ".exe", prefix + ".zip", prefix + "-portable.zip", prefix + ".deb", prefix + "-portable.tar.gz", prefix + "-Setup.exe",
             prefix + "-self-contained.zip", prefix + "-framework-dependent.zip"];
-        if (!J.A(release, "assets").Any(a => packages.Contains(J.S(a, "name"), StringComparer.OrdinalIgnoreCase))) return null;
+        if (!J.A(release, "assets").Any(a => packages.Contains(J.S(a, "name"), StringComparer.OrdinalIgnoreCase) ||
+            platform == "win-x64" && J.S(a, "name") == "Warframe Companion.exe")) return null;
         var url = J.S(release, "html_url");
         if (!Uri.TryCreate(url, UriKind.Absolute, out var link) || link.Scheme != "https" ||
             !link.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) || !link.IsDefaultPort ||

@@ -2,7 +2,7 @@ name: Windows packages
 on:
   push:
     branches: [senpai]
-    paths: ['assets/**', 'src/**', 'web/**', 'tests/**', 'tools/**', 'packaging/**', 'licenses/**', '*.props', '*.slnx', 'LICENSE', 'docs/USAGE.md', '.github/workflows/windows.yml']
+    paths: ['assets/**', 'src/**', 'web/**', 'tests/**', 'tools/**', 'packaging/**', 'licenses/**', '*.props', 'VERSION', '*.slnx', 'LICENSE', 'docs/USAGE.md', '.github/workflows/windows.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -22,26 +22,34 @@ jobs:
         run: |
           python tests/archive.test.py
           if ($LASTEXITCODE -ne 0) { throw 'Archive tests failed.' }
-          ./tools/publish-companion.ps1 -TesseractRoot "$PWD/artifacts/ocr"
+          $package = 'artifacts/windows-package'
+          ./tools/publish-companion.ps1 -OutputDirectory $package
+          ./tools/publish-single-file.ps1 -OutputDirectory artifacts/single-file
+          python tools/smoke-single-file.py "artifacts/single-file/portable/WarframeCompanion-win-x64.exe" artifacts/single-file/startup-smoke.json
+          if ($LASTEXITCODE -ne 0) { throw 'Single-file checks failed.' }
+          python tests/runtime-requirement.test.py "artifacts/single-file/portable/WarframeCompanion-win-x64.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Single-file missing-runtime test failed.' }
           python tests/launcher.test.py src/Native/build/Release
           if ($LASTEXITCODE -ne 0) { throw 'Native launcher tests failed.' }
           $env:PATH = "$PWD/artifacts/ocr;$env:PATH"
           $env:TESSDATA_PREFIX = "$PWD/artifacts/ocr/tessdata"
           dotnet run --project tests/WarframeCompanion.Tests -c Release -- --ocr
           if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed.' }
-          python tools/smoke-desktop-package.py (Get-ChildItem artifacts/companion-win-x64-* -Directory | Select-Object -Last 1).FullName
+          python tools/smoke-desktop-package.py $package
           if ($LASTEXITCODE -ne 0) { throw 'Package smoke tests failed.' }
-          $package = Get-ChildItem artifacts/companion-win-x64-* -Directory | Select-Object -Last 1
-          python tests/runtime-requirement.test.py (Join-Path $package.FullName 'framework-dependent/WarframeCompanion.Desktop.exe')
+          python tests/runtime-requirement.test.py (Join-Path $package 'framework-dependent/WarframeCompanion.Desktop.exe')
           if ($LASTEXITCODE -ne 0) { throw 'Missing runtime test failed.' }
-          ./tools/build-installer.ps1 -PackageDirectory $package.FullName
-          ./tools/build-installer.ps1 -PackageDirectory $package.FullName -IsolatedTest
-          ./tools/smoke-installer.ps1 -Installer (Join-Path $package.FullName 'installer-test/WarframeCompanion-win-x64-TestSetup.exe')
+          ./tools/build-installer.ps1 -PackageDirectory $package
+          ./tools/build-installer.ps1 -PackageDirectory $package -IsolatedTest
+          ./tools/smoke-installer.ps1 -Installer (Join-Path $package 'installer-test/WarframeCompanion-win-x64-TestSetup.exe')
       - uses: actions/upload-artifact@v4
         with:
           name: WarframeCompanion-win-x64
           path: |
-            artifacts/companion-win-x64-*/*.zip
-            artifacts/companion-win-x64-*/measurements.json
-            artifacts/companion-win-x64-*/*Setup.exe
-            artifacts/companion-win-x64-*/SHA256SUMS-windows.txt
+            artifacts/windows-package/*.zip
+            artifacts/windows-package/measurements.json
+            artifacts/windows-package/*Setup.exe
+            artifacts/windows-package/SHA256SUMS-windows.txt
+            artifacts/single-file/portable/*.exe
+            artifacts/single-file/package.json
+            artifacts/single-file/startup-smoke.json

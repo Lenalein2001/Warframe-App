@@ -5,11 +5,24 @@ using WarframeCompanion.Services;
 
 namespace WarframeCompanion.Desktop;
 
-internal sealed class NativeHotkeys(CompanionRuntime runtime, string url) : IDisposable
+internal interface IWindowsHotkeys
 {
+    uint CreateMessageQueue();
+    bool Register(int id, uint modifiers, uint key);
+    void Unregister(int id);
+    bool Next(out bool rewards);
+    void Stop(uint threadId);
+}
+
+internal sealed class NativeHotkeys(CompanionRuntime runtime, string url, IWindowsHotkeys? platform = null) : IDisposable
+{
+    private readonly IWindowsHotkeys windows = platform ?? new WindowsHotkeys();
+    private readonly object registrationGate = new();
+    private CancellationTokenSource? registrationStop;
+    private bool disposed;
     private Thread? thread;
-    private uint threadId;
-    private string? error;
+    private volatile uint threadId;
+    private volatile string? error;
     private readonly CancellationTokenSource stop = new();
     public JsonNode Status()
     {
@@ -18,27 +31,49 @@ internal sealed class NativeHotkeys(CompanionRuntime runtime, string url) : IDis
     }
     public JsonNode Register()
     {
+        lock (registrationGate)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            return RegisterOwned();
+        }
+    }
+    private JsonNode RegisterOwned()
+    {
         if (!OperatingSystem.IsWindows()) return InstallLinux();
-        StopThread(); error = null; using var ready = new ManualResetEventSlim(); var keys = runtime.GetSettings();
+        if (!StopThread()) throw new InventoryException("The previous hotkey registration is still stopping. Try again shortly.");
+        error = null;
+        var ready = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        registrationStop = new();
+        var cancellation = registrationStop.Token;
+        var keys = runtime.GetSettings();
         thread = new Thread(() =>
         {
-            threadId = GetCurrentThreadId(); PeekMessage(out _, 0, 0, 0, 0);
             try
             {
+                threadId = windows.CreateMessageQueue();
                 var names = new[] { J.S(keys, "hotkey_rewards"), J.S(keys, "hotkey_riven") };
                 for (var i = 0; i < names.Length; i++)
                 {
+                    if (cancellation.IsCancellationRequested) return;
                     if (string.IsNullOrWhiteSpace(names[i])) continue;
-                    var (mod, key) = Parse(names[i]!); if (!RegisterHotKey(0, i + 1, mod | 0x4000, key)) throw new InventoryException("A hotkey is already held by another application: " + names[i]);
+                    var (mod, key) = Parse(names[i]!); if (!windows.Register(i + 1, mod | 0x4000, key)) throw new InventoryException("A hotkey is already held by another application: " + names[i]);
                 }
-                ready.Set();
-                while (GetMessage(out var message, 0, 0, 0) > 0)
-                    if (message.Id == 0x312) _ = Invoke(message.WParam == 1);
+                ready.TrySetResult(null);
+                while (!cancellation.IsCancellationRequested && windows.Next(out var rewards))
+                    if (!cancellation.IsCancellationRequested) _ = Invoke(rewards);
             }
-            catch (Exception e) { error = e.Message; ready.Set(); }
-            finally { UnregisterHotKey(0, 1); UnregisterHotKey(0, 2); }
+            catch (Exception e) { ready.TrySetResult(e.Message); }
+            finally { windows.Unregister(1); windows.Unregister(2); ready.TrySetResult("Hotkey registration was cancelled."); }
         }) { IsBackground = true, Name = "Warframe global hotkeys" };
-        thread.Start(); ready.Wait(); if (error != null) throw new InventoryException(error);
+        thread.Start();
+        if (!ready.Task.Wait(TimeSpan.FromSeconds(2)))
+        {
+            registrationStop.Cancel();
+            if (threadId != 0) windows.Stop(threadId);
+            error = "Hotkey registration timed out. You can retry from Settings.";
+        }
+        else error = ready.Task.GetAwaiter().GetResult();
+        if (error != null) throw new InventoryException(error);
         return J.Node(new { file = (string?)null, sourced = false, lines = Status()["lines"] });
     }
     private async Task Invoke(bool rewards)
@@ -80,8 +115,39 @@ internal sealed class NativeHotkeys(CompanionRuntime runtime, string url) : IDis
         if (result.Contains("error", StringComparison.OrdinalIgnoreCase)) throw new InventoryException("Compositor reload reported an error. The previous configuration was backed up.");
     }
     private static void Atomic(string path, string content) { var tmp = path + "." + Guid.NewGuid().ToString("N") + ".tmp"; try { File.WriteAllText(tmp, content); File.Move(tmp, path, true); } finally { if (File.Exists(tmp)) File.Delete(tmp); } }
-    private void StopThread() { if (thread is { IsAlive: true }) { PostThreadMessage(threadId, 0x12, 0, 0); thread.Join(TimeSpan.FromSeconds(5)); } thread = null; }
-    public void Dispose() { stop.Cancel(); StopThread(); stop.Dispose(); }
+    private bool StopThread()
+    {
+        registrationStop?.Cancel();
+        if (thread is { IsAlive: true })
+        {
+            if (threadId != 0) windows.Stop(threadId);
+            if (!thread.Join(TimeSpan.FromSeconds(2))) return false;
+        }
+        thread = null; threadId = 0;
+        registrationStop?.Dispose(); registrationStop = null;
+        return true;
+    }
+    public void Dispose()
+    {
+        lock (registrationGate)
+        {
+            if (disposed) return;
+            disposed = true; stop.Cancel(); StopThread(); stop.Dispose();
+        }
+    }
+    private sealed class WindowsHotkeys : IWindowsHotkeys
+    {
+        public uint CreateMessageQueue() { var id = GetCurrentThreadId(); PeekMessage(out _, 0, 0, 0, 0); return id; }
+        public bool Register(int id, uint modifiers, uint key) => RegisterHotKey(0, id, modifiers, key);
+        public void Unregister(int id) => UnregisterHotKey(0, id);
+        public void Stop(uint id) => PostThreadMessage(id, 0x12, 0, 0);
+        public bool Next(out bool rewards)
+        {
+            while (GetMessage(out var message, 0, 0, 0) > 0)
+                if (message.Id == 0x312) { rewards = message.WParam == 1; return true; }
+            rewards = false; return false;
+        }
+    }
     [StructLayout(LayoutKind.Sequential)] private struct Message { public nint Window; public uint Id; public nuint WParam; public nint LParam; public uint Time; public int X, Y; public uint Private; }
     [DllImport("user32.dll")] private static extern bool RegisterHotKey(nint window, int id, uint modifiers, uint key);
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(nint window, int id);

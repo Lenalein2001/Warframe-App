@@ -21,6 +21,8 @@ internal sealed class StartupTiming
             var elapsed = (DateTime.UtcNow - DateTime.FromFileTimeUtc(launch)).TotalMilliseconds;
             entries.Add("launcher-to-managed-entry-ms=" + elapsed.ToString("F1", CultureInfo.InvariantCulture));
         }
+        if (long.TryParse(Environment.GetEnvironmentVariable("WFC_CREATE_FILETIME"), out var requested) && requested > 0 && requested <= DateTime.UtcNow.ToFileTimeUtc())
+            entries.Add("create-process-to-managed-entry-ms=" + (DateTime.UtcNow - DateTime.FromFileTimeUtc(requested)).TotalMilliseconds.ToString("F1", CultureInfo.InvariantCulture));
         Mark("managed-entry");
     }
     public void Attach(string directory)

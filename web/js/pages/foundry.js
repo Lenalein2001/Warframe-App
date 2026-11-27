@@ -7,12 +7,19 @@ import * as drawer from "../drawer.js";
 const st = { q: "", cat: "", show: "buildable", kind: "", myMr: false };
 const KINDS = [["", "All"], ["gear", "Equipment"], ["craft", "Parts and gear"]];
 const SHOW = [["buildable", "Requirements collected"], ["started", "Started"], ["missing", "Not built yet"], ["", "Everything"]];
+const inventoryState = s => JSON.stringify([s?.account?.key, s?.sources?.inventory?.imported, s?.sources?.inventory?.pending, s?.ready]);
+let shownInventory, refreshFoundry;
 
 export default {
   id: "foundry",
   title: "Foundry",
   icon: "foundry",
+  onState(state) {
+    if (refreshFoundry && shownInventory !== inventoryState(state)) refreshFoundry();
+  },
   async render(view, params, app) {
+    shownInventory = inventoryState(app.state);
+    refreshFoundry = app.refresh;
     const d = await api("foundry");
     if (d.loading) { setTimeout(() => app.refresh(), 2500); throw new Error("Downloading game data…"); }
     const cats = [...new Set(d.items.map((r) => r.category))].sort();
@@ -22,9 +29,9 @@ export default {
     view.innerHTML = `<div class="page">
       <div class="page-head"><div><h1>Foundry</h1><p>${d.pending.length} building · ${ready} with listed requirements collected. Equipment counts may include unbuilt blueprints; check resources and the foundry.</p></div></div>
       ${d.pending.length ? `<div class="card" style="margin-bottom:16px"><div class="card-head"><h2>Building</h2></div>
-        <div class="cards">${d.pending.map((f) => `<div class="icard" ${f.known ? `data-uid="${esc(f.uid)}"` : `style="cursor:default"`}>${art(f.image)}
+        <div class="cards">${d.pending.map((f, index) => `<div class="icard" ${f.known ? `data-uid="${esc(f.uid)}"` : `style="cursor:default"`}>${art(f.image)}
           <div class="body"><span class="name">${esc(f.name)}</span>
-          <div class="meta">${f.done ? (f.done <= Date.now() / 1000 ? `<span class="pill good">Ready to claim</span>` : `Ready in ${countdown(f.done, "now")}`) : "building"}</div></div></div>`).join("")}</div></div>` : ""}
+          <div class="meta">${f.done ? (f.done <= Date.now() / 1000 ? `<span class="pill good">Ready to claim</span>` : `Ready in ${countdown(f.done, "now")}`) : "building"}</div>${f.build ? `<button type="button" data-claim="${index}" ${f.done > Date.now() / 1000 ? "hidden" : ""}>Mark collected</button>` : ""}</div></div>`).join("")}</div></div>` : ""}
       <div class="toolbar">
         <input type="search" id="q" placeholder="Search" value="${esc(st.q)}" aria-label="Search">
         <div class="seg" id="show">${SHOW.map(([v, l]) => `<button data-v="${v}" class="${st.show === v ? "on" : ""}">${l}</button>`).join("")}</div>
@@ -55,6 +62,14 @@ export default {
           </div></div>`).join("") || `<div class="empty"><b>Nothing here</b>${st.show === "buildable" ? "No item has all its parts yet." : "Try another filter."}</div>`;
     };
     draw();
+    if (view.querySelector("[data-claim][hidden]")) app.every(() => {
+      for (const button of view.querySelectorAll("[data-claim][hidden]")) {
+        if (d.pending[Number(button.dataset.claim)].done <= Date.now() / 1000) {
+          button.hidden = false;
+          button.previousElementSibling.textContent = "Ready to claim";
+        }
+      }
+    }, 1000);
     $("#q").oninput = (e) => { st.q = e.target.value; draw(); };
     for (const b of view.querySelectorAll("#show button")) {
       b.onclick = () => { st.show = b.dataset.v; for (const x of view.querySelectorAll("#show button")) x.classList.toggle("on", x === b); draw(); };
@@ -72,6 +87,17 @@ export default {
       const row = d.items.find((r) => r.uid === b.dataset.pin);
       if (row && await act("manual/pin", { uid: row.uid, pinned: !row.pinned }, row.pinned ? "Unpinned" : "Pinned to the Overview")) { row.pinned = !row.pinned; draw(); }
     });
-    view.querySelector(".page").onclick = (e) => { const c = e.target.closest("[data-uid]"); if (c && c.dataset.uid) drawer.open(c.dataset.uid); };
+    view.querySelector(".page").onclick = async (e) => {
+      const button = e.target.closest("[data-claim]");
+      if (button) {
+        button.disabled = true;
+        if (await act("foundry/built", d.pending[Number(button.dataset.claim)].build, "Collection recorded"))
+          window.dispatchEvent(new CustomEvent("wfp:changed"));
+        else button.disabled = false;
+        return;
+      }
+      const card = e.target.closest("[data-uid]");
+      if (card?.dataset.uid) drawer.open(card.dataset.uid);
+    };
   },
 };

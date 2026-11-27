@@ -66,6 +66,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         command += L" --data-dir " + quote((root / L"data").wstring());
     STARTUPINFOW startup{}; startup.cb = sizeof(startup);
     PROCESS_INFORMATION process{};
+    FILETIME requested{}; GetSystemTimeAsFileTime(&requested);
+    ticks.LowPart = requested.dwLowDateTime; ticks.HighPart = requested.dwHighDateTime;
+    SetEnvironmentVariableW(L"WFC_CREATE_FILETIME", std::to_wstring(ticks.QuadPart).c_str());
     if (!CreateProcessW(executable.c_str(), command.data(), nullptr, nullptr, FALSE, 0, nullptr,
                         root.c_str(), &startup, &process)) {
         const auto error = GetLastError();

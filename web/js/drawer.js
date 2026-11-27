@@ -397,6 +397,8 @@ function item(x) {
     <div class="bar lotus" style="margin-top:10px"><i style="width:${pct}%"></i></div>
     <div class="row" style="margin-top:12px">
       <button data-mastered="${x.manual ? 0 : 1}">${icon("check")} ${x.manual ? "Unmark as mastered" : "Mark as mastered"}</button>
+      ${x.build?.pending ? '<span class="pill">Build recorded · awaiting sync</span>' : ""}
+      ${x.build && (!x.build.pending || x.anotherBuild) ? `<button type="button" data-built>${x.build.pending ? "Record another build" : "Mark as built"}</button>` : ""}
       ${x.task ? taskButton(x.task) : ""}
       <span class="muted" style="font-size:13px">${x.manual ? "Marked by hand." : "If the profile is out of date."}</span>
     </div>
@@ -465,6 +467,12 @@ function wire(d, x, version) {
     };
   }
   for (const button of d.querySelectorAll("[data-copy-relic]")) button.onclick = () => copyRelic(button.dataset.copyRelic);
+  const built = d.querySelector("[data-built]");
+  if (built) built.onclick = async () => {
+    built.disabled = true;
+    if (await act("foundry/built", x.build.pending ? x.anotherBuild : x.build, "Build recorded")) refresh();
+    else built.disabled = false;
+  };
   const pin = d.querySelector("[data-pin]");
   if (pin) pin.onclick = async () => {
     if (await act("manual/pin", { uid: x.key, pinned: !x.pinned }, x.pinned ? "Unpinned" : "Pinned to the Overview")) refresh();

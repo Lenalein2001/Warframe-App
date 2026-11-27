@@ -40,6 +40,7 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
     public ArtService Art { get; }
     public RewardHistory History { get; }
     public UpdateService Updates { get; }
+    public OcrInstallation Ocr { get; }
     public string? DataError { get; private set; }
     public double Started { get; } = J.Now;
     public bool Desktop { get; set; }
@@ -68,6 +69,7 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
         if (migrateLegacy) History.ImportLegacy(Path.Combine(LegacyMigration.DefaultPaths().Data, "rewards.jsonl"));
         cache = new(Path.Combine(DataDirectory, "cache"), offline); loader = new(cache);
         Updates = new(cache);
+        Ocr = new(DataDirectory);
         Art = new(Path.Combine(DataDirectory, "cache", "art"), offline);
         Arbitrations = new(cache);
         Market = new(Path.Combine(DataDirectory, "cache"), J.S(settings, "platform") ?? "pc", offline); World = new(cache, J.S(settings, "platform") ?? "pc"); Rivens = new(cache);
@@ -86,13 +88,25 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
     internal void StartGameWatcher() => gameLoop ??= GameLoop();
     private async Task Background()
     {
-        var catalog = Task.WhenAll(Reload(stop.Token), Updates.Check(stop.Token));
-        try { await Market.Load(stop.Token); } catch (Exception e) when (!stop.IsCancellationRequested && e is IOException or HttpRequestException or JsonException or TaskCanceledException) { Event("Market metadata is unavailable; prices remain unknown.", "error"); }
-        await catalog;
-        while (!stop.IsCancellationRequested)
+        async Task LoadMarket()
         {
-            try { await Task.WhenAll(World.Refresh(stop.Token), Rivens.Refresh(J.S(GetSettings(), "platform") ?? "pc", stop.Token)); NotificationTick(); await Task.Delay(TimeSpan.FromSeconds(60), stop.Token); }
-            catch (OperationCanceledException) when (stop.IsCancellationRequested) { break; }
+            try { await Market.Load(stop.Token); }
+            catch (Exception e) when (!stop.IsCancellationRequested && e is IOException or HttpRequestException or JsonException or TaskCanceledException)
+            { Event("Market metadata is unavailable; prices remain unknown.", "error"); }
+        }
+        try
+        {
+            await Task.WhenAll(Reload(stop.Token), Updates.Check(stop.Token), LoadMarket());
+            while (!stop.IsCancellationRequested)
+            {
+                await Task.WhenAll(World.Refresh(stop.Token), Rivens.Refresh(J.S(GetSettings(), "platform") ?? "pc", stop.Token));
+                NotificationTick();
+                await Task.Delay(TimeSpan.FromSeconds(60), stop.Token);
+            }
+        }
+        catch (Exception e) when (stop.IsCancellationRequested && e is OperationCanceledException or IOException or HttpRequestException or JsonException)
+        {
+            // A cache or network read can report its own failure while shutdown cancels it.
         }
     }
     public async Task Reload(CancellationToken cancellation = default, bool force = false)
@@ -113,14 +127,33 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
         lock (sync) { events.Add(J.Node(new { t = J.Now, text = message, kind })); if (events.Count > 100) events.RemoveRange(0, events.Count - 100); }
     }
     private AccountState? Active => registry.Accounts.FirstOrDefault(a => a.Key == registry.Active);
-    public GameView View()
+    public GameView View() => View(false, out _, out _);
+    private GameView View(bool compare, out InventorySnapshot? previous, out string? accountKey)
     {
         lock (sync)
         {
-            var account = Active;
-            var copy = account == null ? null : JsonSerializer.Deserialize<AccountState>(JsonSerializer.Serialize(account, J.Options), J.Options);
-            return new(Catalog, copy == null ? null : snapshots.Current(copy.Id ?? copy.Key), copy?.Profile, copy?.Manual ?? new(), Market);
+            accountKey = Active?.Key;
+            return ViewOf(Active, compare, out previous);
         }
+    }
+    private GameView ViewOf(AccountState? account, bool compare, out InventorySnapshot? previous)
+    {
+        previous = null;
+        if (account == null) return new(Catalog, null, null, new(), Market);
+        var copy = JsonSerializer.Deserialize<AccountState>(JsonSerializer.Serialize(account, J.Options), J.Options)!;
+        var identity = copy.Id ?? copy.Key;
+        if (compare)
+        {
+            var pair = snapshots.ConfirmedPair(identity);
+            previous = pair.Previous;
+            return new(Catalog, pair.Current, copy.Profile, copy.Manual, Market);
+        }
+        var working = snapshots.Working(copy.Key, identity);
+        return new(Catalog, GameView.ApplyPending(working, copy.Manual), copy.Profile, copy.Manual, Market) {
+            Owner = copy.Key, Baseline = working.Baseline, ConfirmedJobs = working.Snapshot?.Foundry ?? [],
+            Pending = working.Pending, CaveRoll = copy.Duviri,
+            SpiralStart = World.SpiralBegan, SpiralEnd = World.SpiralEnds
+        };
     }
     public JsonNode Summary()
     {
@@ -133,13 +166,13 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
             var sources = new {
                 eeLog = new { path = Log.Path, active = GameProcess != null, searching = Log.Path == null },
                 profile = new { fetched = profile?.Fetched, source = profile?.Source, error = account?.ProfileError, items = profile?.Xp.Count ?? 0 },
-                inventory = new { source = inv?.Provider, imported = inv?.ReadAt.ToUnixTimeMilliseconds() / 1000.0, synced = inv?.SourceTimestamp, stacks = inv?.Counts.Count ?? 0 },
+                inventory = new { source = inv?.Provider, imported = inv?.ReadAt.ToUnixTimeMilliseconds() / 1000.0, synced = inv?.SourceTimestamp, pending = view.Pending.Count, stacks = inv?.Counts.Count ?? 0 },
                 manual = new { counts = view.Manual.Counts.Count, mastered = view.Manual.Mastered.Count },
-                memscan = new { enabled = J.B(settings["memory_scan_enabled"]), running = ScanRunning, error = ScanError, state = !J.B(settings["memory_scan_enabled"]) ? "off" : ScanRunning ? "scanning" : ScanError != null ? "error" : lastSuccessfulScan != null ? "ok" : "idle", detail = ScanError, last = lastSuccessfulScan, progress = 0, next = nextMemory > J.Now ? (double?)nextMemory : null },
-                tools = new Dictionary<string, object?> { ["tesseract"] = ScreenCapture.Which("tesseract") != null, ["screenshot"] = ScreenCapture.ScreenshotTool(J.S(settings, "screenshot_tool") ?? "auto"), ["notify-send"] = OperatingSystem.IsWindows() || ScreenCapture.Which("notify-send") != null }, market = new { error = Market.Error, queued = Market.Pending }
+                memscan = new { enabled = J.B(settings["memory_scan_enabled"]), running = ScanRunning, error = ScanError, state = !J.B(settings["memory_scan_enabled"]) ? "off" : ScanRunning ? "scanning" : ScanError != null ? "error" : lastSuccessfulScan != null ? "ok" : "idle", detail = ScanError, last = lastSuccessfulScan, canRead = GameProcess != null && account?.Id != null && account.Key == playingKey },
+                tools = new Dictionary<string, object?> { ["tesseract"] = Ocr.Executable != null, ["ocr"] = Ocr.Status(), ["screenshot"] = ScreenCapture.ScreenshotTool(J.S(settings, "screenshot_tool") ?? "auto"), ["notify-send"] = OperatingSystem.IsWindows() || ScreenCapture.Which("notify-send") != null }, market = new { error = Market.Error, queued = Market.Pending }
             };
             return J.Node(new { ready = Catalog.LoadedAt != null, dataError = DataError, version = UpdateService.Version, os = OperatingSystem.IsWindows() ? "windows" : "linux", desktop = Desktop, update = Updates.Available,
-                account = new { key = account?.Key, id = account?.Id, name = account?.Name, source = account?.Source, playing = GameProcess != null && account?.Key == playingKey, logName = GameProcess != null ? Log.Player : null, evidence = account?.Evidence ?? [], profileError = account?.ProfileError },
+                account = new { key = account?.Key, id = account?.Id, name = account?.Name, source = account?.Source, playing = GameProcess != null && account != null && account.Key == playingKey, logName = GameProcess != null ? Log.Player : null, evidence = account?.Evidence ?? [], profileError = account?.ProfileError },
                 accounts = registry.Accounts.Select(a => {
                     var saved = a.Key == registry.Active
                         ? inv == null ? null : new SnapshotMetadata(inv.MasteryRank, inv.SourceTimestamp)
@@ -154,10 +187,13 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
     public JsonNode Get(string path, IReadOnlyDictionary<string, string> query)
     {
         if (path == "state") return Summary(); if (path == "settings") return GetSettings();
-        var view = View(); var farming = new FarmingPlanner(view); string Q(string key) => query.GetValueOrDefault(key) ?? "";
+        var view = View(path == "inventory/changes", out var previous, out var accountKey);
+        var farming = new FarmingPlanner(view); string Q(string key) => query.GetValueOrDefault(key) ?? "";
         return path switch
         {
             "mastery" => view.Mastery(), "primes" => view.Primes(), "inventory" => view.InventoryRows(),
+            "inventory/copies" => view.CopiesToKeep(accountKey),
+            "inventory/changes" => view.InventoryChanges(previous),
             "foundry" => J.Node(new { pending = view.PendingFoundry(), items = J.A(view.Craftable()).Concat(J.A(view.Crafts())) }),
             "relics" => view.Relics(Q("owned") == "1"), "trade" => J.Node(new { rows = view.Trade(), source = view.Inventory == null ? "manual" : "inventory" }),
             "find" => view.Find(Q("q")), "find-task" => farming.Find(Q("q")), "tasks" => farming.Board(),
@@ -165,7 +201,7 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
             "item" => view.Detail(Q("key"), World.OpenEras) ?? throw new InventoryException("Unknown item."),
             "search" => Market.Search(Q("q")), "world" => WorldSummary(view), "fissures" => World.Fissures(view, GetSettings()["fissure_watch"]),
             "rivens" => Rivens.Rows(Catalog), "riven" => RivenService.Table(Catalog, Q("weapon"), ParseCount(Q("pos"), 3), ParseCount(Q("neg"), 1)),
-            "history" => History.Read(registry.Active, Started),
+            "history" => RewardSelections(accountKey),
             "rewards" => rewards.DeepClone(), "riven/result" => riven.DeepClone(), "hotkeys" => HotkeyStatus?.Invoke() ?? J.Node(new { compositor = (string?)null, lines = Array.Empty<string>(), note = "Open the desktop app to register global hotkeys." }),
             "standing" => Standing(view), "syndicate" => new StandingService(view).Detail(Q("tag"), view.Profile?.MasteryRank ?? view.Inventory?.MasteryRank) ?? throw new InventoryException("Unknown syndicate."),
             _ => throw new NotSupportedException("This service is not attached: " + path)
@@ -179,8 +215,8 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
     }
     private JsonNode WorldSummary(GameView view)
     {
-        var world = World.Summary(Catalog); world["arbitration"] = Arbitrations.Summary(Catalog, J.Now);
-        lock (sync) world["duviri"] = Active?.Duviri is { } offers ? WorldService.Duviri(view, offers, World.SpiralBegan) : null;
+        var world = World.Summary(view.Catalog); world["arbitration"] = Arbitrations.Summary(view.Catalog, J.Now);
+        world["duviri"] = view.CaveRoll is { } offers ? WorldService.Duviri(view, offers, view.SpiralStart) : null;
         if (world["nightwave"] is JsonObject nightwave) nightwave["mine"] = J.A(new StandingService(view).Summary(view.Profile?.MasteryRank ?? view.Inventory?.MasteryRank, World.NightwaveTag), "syndicates").FirstOrDefault(s => J.S(s, "kind") == "nightwave")?.DeepClone(); return world;
     }
     private void SaveRegistry(RegistryState next) { store.Write("registry", next); registry = next; }
@@ -212,7 +248,11 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
                         store.Write("settings", updated); oldMarket = Market; Market = nextMarket; World = new(cache, platform); Rivens.SetPlatform(platform);
                     }
                     if (oldMarket == null) store.Write("settings", updated); settings = updated;
-                    if (!J.B(settings["memory_scan_enabled"])) memoryCancellation?.Cancel();
+                    if (!J.B(settings["memory_scan_enabled"]))
+                    {
+                        pendingMemory = null;
+                        memoryCancellation?.Cancel();
+                    }
                 }
                 if (oldMarket != null) { try { await Market.Load(cancellation); } catch (Exception e) when (e is IOException or HttpRequestException or JsonException) { Event("Market metadata is unavailable on the selected platform.", "error"); } await World.Refresh(cancellation); await Rivens.Refresh(J.S(GetSettings(), "platform")!, cancellation); }
                 if (J.Get(body, "hotkey_rewards") != null || J.Get(body, "hotkey_riven") != null) { try { if (OperatingSystem.IsWindows()) RegisterHotkeys?.Invoke(); } catch (InventoryException e) { Event(e.Message, "error"); } }
@@ -228,20 +268,20 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
                     if (account == null) { account = new() { Key = "account-" + Guid.NewGuid().ToString("N"), Name = "Account " + (next.Accounts.Count + 1) }; next.Accounts.Add(account); next.Active = account.Key; }
                     if (next.Accounts.Any(a => a.Key != account.Key && a.Id == id)) throw new InventoryException("That ID is already linked to another account.");
                     if (account.Id != null && account.Id != id || account.Profile?.Id != null && account.Profile.Id != id) throw new InventoryException("This account is already associated with another ID.");
-                    if (snapshots.Current(account.Key) is { } saved && snapshots.Current(id) == null) snapshots.Commit(saved with { AccountId = id, IdentityVerified = false });
+                    if (account.Id == null) snapshots.SeedLinkedAccount(account.Key, id);
                     account.Id = id; account.Source = "entered by you"; SaveRegistry(next);
                 }
                 break;
             case "account/switch":
-                lock (sync) { var key = J.S(body, "key"); if (!registry.Accounts.Any(a => a.Key == key)) throw new InventoryException("Unknown account."); var next = new RegistryState { Active = key, Accounts = registry.Accounts, Switched = J.Now }; SaveRegistry(next); } break;
+                lock (sync) { var key = J.S(body, "key"); if (!registry.Accounts.Any(a => a.Key == key)) throw new InventoryException("Unknown account."); var next = new RegistryState { Active = key, Accounts = registry.Accounts, Switched = J.Now }; if (registry.Active != key) { pendingMemory = null; memoryCancellation?.Cancel(); ScanError = null; lastSuccessfulScan = null; } SaveRegistry(next); } break;
             case "account/forget":
-                lock (sync) { var key = J.S(body, "key"); var accounts = registry.Accounts.Where(a => a.Key != key).ToList(); SaveRegistry(new() { Accounts = accounts, Active = registry.Active == key ? accounts.FirstOrDefault()?.Key : registry.Active, Switched = J.Now }); } break;
+                lock (sync) { var key = J.S(body, "key"); if (key == playingKey) { pendingMemory = null; memoryCancellation?.Cancel(); ScanError = null; lastSuccessfulScan = null; } var accounts = registry.Accounts.Where(a => a.Key != key).ToList(); SaveRegistry(new() { Accounts = accounts, Active = registry.Active == key ? accounts.FirstOrDefault()?.Key : registry.Active, Switched = J.Now }); } break;
             case "profile/import":
                 var profile = StateStore.ParseProfile(body);
                 EditAccount(a => {
                     if (a.Id != null && profile.Id != null && a.Id != profile.Id) throw new InventoryException("Profile belongs to a different account.");
                     if (profile.Id != null && registry.Accounts.Any(other => other.Key != a.Key && other.Id == profile.Id)) throw new InventoryException("That ID is already linked to another account.");
-                    if (a.Id == null && profile.Id != null && snapshots.Current(a.Key) is { } saved && snapshots.Current(profile.Id) == null) snapshots.Commit(saved with { AccountId = profile.Id, IdentityVerified = false });
+                    if (a.Id == null && profile.Id != null) snapshots.SeedLinkedAccount(a.Key, profile.Id);
                     a.Id ??= profile.Id; a.Name = profile.Name ?? a.Name; a.Profile = profile; a.ProfileError = null;
                 }); break;
             case "profile/refresh": await RefreshProfile(cancellation); break;
@@ -253,8 +293,19 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
             case "riven/read-fingerprint":
                 var directRiven = FingerprintRivenReader.Read(Catalog, body); directRiven["traded"] = Rivens.Traded(J.S(directRiven, "weapon")!);
                 lock (sync) riven = directRiven.DeepClone(); return directRiven;
+            case "memory/read":
+                await CaptureMemory(cancellation);
+                cancellation.ThrowIfCancellationRequested();
+                lock (sync) return J.Node(new { error = ScanError, last = lastSuccessfulScan });
             case "rewards/scan": return await ScanRewards(false, cancellation);
+            case "rewards/pick":
+            case "foundry/built":
+                lock (sync) return RecordInventoryAction(path, body);
             case "riven/scan": return await ScanRiven(cancellation);
+            case "ocr/install":
+                if (Offline) throw new InventoryException("Go online to download OCR files.");
+                using (var installCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellation, stop.Token)) await Ocr.Install(installCancellation.Token);
+                return J.Node(Ocr.Status());
             case "overlay/test": await TestOverlay(cancellation); break;
             case "notifications/test":
                 if (NotificationRequested is not { } notificationHandler) throw new InventoryException("Open the desktop app to test notifications.");
@@ -265,6 +316,18 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
             case "manual/count":
                 var uid = Uid(); var count = J.Get(body, "count"); if (count != null && J.N(count, -1) < 0) throw new InventoryException("Count must be a nonnegative integer.");
                 EditAccount(a => { if (count == null) a.Manual.Counts.Remove(uid); else a.Manual.Counts[uid] = new(J.N(count), J.Now); }); break;
+            case "inventory/keep":
+                var keepUid = Uid();
+                if (keepUid.Length is 0 or > 1024 || string.IsNullOrWhiteSpace(keepUid) ||
+                    J.Get(body, "minimum") is not JsonValue minimum || !minimum.TryGetValue<int>(out var keep) || keep < 0)
+                    throw new InventoryException("Enter a whole number of copies to keep, zero or greater.");
+                lock (sync)
+                {
+                    if (Active == null || J.S(body, "accountKey") != Active.Key)
+                        throw new InventoryException("The selected account changed. Reopen Inventory before saving.");
+                    EditAccount(a => { if (keep == 0) a.Manual.KeepCopies.Remove(keepUid); else a.Manual.KeepCopies[keepUid] = keep; });
+                }
+                break;
             case "manual/mastered": var masteredUid = Uid(); EditAccount(a => { if (J.B(J.Get(body, "mastered"))) a.Manual.Mastered[masteredUid] = J.Now; else a.Manual.Mastered.Remove(masteredUid); }); break;
             case "manual/pin": var pinUid = Uid(); EditAccount(a => { a.Manual.Pinned.Remove(pinUid); if (J.B(J.Get(body, "pinned"))) a.Manual.Pinned.Add(pinUid); }); break;
             case "manual/task":
@@ -284,14 +347,14 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
         }
         return J.Node(new { ok = true });
     }
-    private JsonNode ImportInventory(JsonNode body, string accountId, CancellationToken cancellation)
+    private JsonNode ImportInventory(JsonNode body, string accountId, CancellationToken cancellation, WatchedExport? export = null)
     {
         var snapshot = InventoryParser.Parse(JsonSerializer.SerializeToUtf8Bytes(body), accountId, complete: false);
         var payload = body["InventoryJson"] ?? body;
         if (payload is JsonValue val && val.TryGetValue<string>(out var raw)) payload = JsonNode.Parse(raw)!;
         var complete = new[] { "MiscItems", "Suits", "Recipes", "XPInfo" }.All(k => payload[k] is JsonArray);
-        var result = snapshots.Commit(snapshot with { Complete = complete, Provider = "imported file", Warnings = complete ? snapshot.Warnings.Where(w => !w.StartsWith("Partial observation", StringComparison.Ordinal)).ToArray() : snapshot.Warnings }, cancellation);
-        Event(result.Reason, result.Promoted ? "info" : "error");
+        var result = snapshots.Commit(snapshot with { Complete = complete, Provider = "imported file", Warnings = complete ? snapshot.Warnings.Where(w => !w.StartsWith("Partial observation", StringComparison.Ordinal)).ToArray() : snapshot.Warnings }, cancellation, export);
+        if (result.Recorded) Event(result.Reason, result.Promoted ? "info" : "error");
         return J.Node(new { ok = true, promoted = result.Promoted, message = result.Reason });
     }
     private async Task RefreshProfile(CancellationToken cancellation)
@@ -331,6 +394,6 @@ public sealed partial class CompanionRuntime : IAsyncDisposable
         if (automaticOcr != null) { try { await automaticOcr; } catch (OperationCanceledException) { } }
         RewardScreenOpened -= StartAutomaticOcr; RewardScreenClosed -= CloseRewards;
         foreach (var market in platformMarkets.Values) await market.DisposeAsync();
-        Art.Dispose(); cache.Dispose(); profileClient.Dispose(); stop.Dispose(); reload.Dispose(); profileGate.Dispose();
+        Ocr.Dispose(); Art.Dispose(); cache.Dispose(); profileClient.Dispose(); stop.Dispose(); reload.Dispose(); profileGate.Dispose();
     }
 }

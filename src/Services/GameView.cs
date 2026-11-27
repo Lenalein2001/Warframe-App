@@ -129,21 +129,27 @@ public sealed partial class GameView(Catalog catalog, InventorySnapshot? invento
         var parts = c.Needs.Select(n => new { name = n.Name, need = n.Count, have = Count(n.Uid), image = Services.Catalog.ImageUrl(n.Image) }).ToArray(); var met = parts.Count(p => p.have >= p.need);
         return new { uid = c.Uid, name = c.Name, category = c.Kind, craft = true, pinned = Manual.Pinned.Contains(c.Uid), image = Services.Catalog.ImageUrl(c.Image), masteryReq = c.MasteryReq,
             quantity = c.Quantity, held = Count(c.Uid), have = met, need = parts.Length, buildable = met == parts.Length, parts }; }).OrderByDescending(c => c.have / (double)Math.Max(1, c.need)));
-    public JsonArray PendingFoundry() => J.Array((Inventory?.Foundry ?? []).OrderBy(f => f.Done ?? double.MaxValue).Select(f => new { uid = f.Recipe, name = Catalog.NameOf(f.Recipe), done = f.Done, image = ImageFor(f.Recipe), known = Catalog.Items.ContainsKey(f.Recipe) || Catalog.Aliases.ContainsKey(f.Recipe) }));
+    public JsonArray PendingFoundry() => J.Array((Inventory?.Foundry ?? []).OrderBy(f => f.Done ?? double.MaxValue).Select(f => new {
+        uid = f.Recipe, name = Catalog.NameOf(f.Recipe), done = f.Done, image = ImageFor(f.Recipe),
+        known = Catalog.Items.ContainsKey(f.Recipe) || Catalog.Aliases.ContainsKey(f.Recipe),
+        build = Output(f) is { } result ? BuildOffer(result, f) : null }));
+    private static bool IsWeapon(GameItem? item) => item?.Category is "Primary" or "Secondary" or "Melee" or "Arch-Gun" or "Arch-Melee" or "SentinelWeapons";
+
     public JsonNode InventoryRows()
     {
-        if (Inventory == null) return J.Node(new { items = Array.Empty<object>(), source = (string?)null });
+        if (Inventory == null) return J.Node(new { items = Array.Empty<object>(), source = (string?)null, pending = Pending.Count });
         var entries = Inventory.Equipment.Select(p => (p.Key, p.Value.Count)).Concat(Inventory.Counts.Where(p => p.Value > 0 && !Inventory.Equipment.ContainsKey(p.Key)).Select(p => (p.Key, p.Value)));
         var rows = entries.Select(p => { var (name, kind, image) = InventoryEntry(p.Key); var slug = Market.Slug(p.Key, null, name); if (Market.Item(slug) == null) slug = null;
             var item = Catalog.Items.GetValueOrDefault(p.Key);
             var uses = Catalog.CraftingUses.GetValueOrDefault(p.Key) ?? [];
             return new { uid = p.Key, name, kind, count = p.Item2, image, price = Market.Price(slug, false)?.Sell, ducats = Market.Item(slug)?.Ducats, slug,
-                isWeapon = item?.Category is "Primary" or "Secondary" or "Melee" or "Arch-Gun" or "Arch-Melee" or "SentinelWeapons",
+                isWeapon = IsWeapon(item),
                 mastered = item == null ? (bool?)null : Status(item).Status == "mastered", craftingUses = uses.Length,
                 craftingKnown = Catalog.RecipesAvailable,
                 hasDetail = item != null || Catalog.Aliases.ContainsKey(p.Key) || Catalog.RelicUids.ContainsKey(p.Key) || Catalog.Inventory.ContainsKey(p.Key) || Catalog.Lookup.ContainsKey(p.Key),
                 lookupDetail = item == null && !Catalog.Aliases.ContainsKey(p.Key) && !Catalog.RelicUids.ContainsKey(p.Key) && !Catalog.Inventory.ContainsKey(p.Key) && Catalog.Lookup.ContainsKey(p.Key) }; });
-        return J.Node(new { items = rows, source = Inventory.Provider, imported = Inventory.ReadAt.ToUnixTimeMilliseconds() / 1000.0, currencies = Inventory.Currencies, recipesAvailable = Catalog.RecipesAvailable });
+        return J.Node(new { items = rows, source = Inventory.Provider, pending = Pending.Count,
+            imported = Inventory.ReadAt.ToUnixTimeMilliseconds() / 1000.0, currencies = Inventory.Currencies, recipesAvailable = Catalog.RecipesAvailable });
     }
     private (string Name, string Kind, string? Image) InventoryEntry(string uid, HashSet<string>? visiting = null)
     {
@@ -230,10 +236,10 @@ public sealed partial class GameView(Catalog catalog, InventorySnapshot? invento
         if (query.Trim().Length < 2) return [];
         var hits = new List<JsonNode>();
         foreach (var it in Catalog.Items.Values) if (MatchRank(it.Name, query) != null) hits.Add(J.Node(new { kind = "item", key = it.Uid, name = it.Name, sub = it.Category, image = Services.Catalog.ImageUrl(it.Image), status = Status(it).Status }));
-        foreach (var p in Catalog.Parts.Values.Where(p => p.Relics.Count > 0)) if (MatchRank(p.Name, query) != null) { var slug = Market.Slug(p.Uid, p.Slug, p.Name); hits.Add(J.Node(new { kind = "part", key = p.Uid, name = p.Name, sub = p.Vaulted ? "Prime part · vaulted" : "Prime part", image = Market.Item(slug)?.Image, price = Market.Price(slug, false)?.Sell, have = Count(p.Uid) })); }
-        foreach (var r in Catalog.Relics.Values) if (MatchRank(r.Name + " Relic", query) != null) hits.Add(J.Node(new { kind = "relic", key = r.Name, name = r.Name + " Relic", sub = r.Vaulted ? "Relic · vaulted" : "Relic", image = Services.Catalog.ImageUrl(r.Image), have = r.Uids.Values.Sum(Count) }));
+        foreach (var p in Catalog.Parts.Values.Where(p => p.Relics.Count > 0)) if (MatchRank(p.Name, query) != null) { var slug = Market.Slug(p.Uid, p.Slug, p.Name); hits.Add(J.Node(new { kind = "part", key = p.Uid, name = p.Name, sub = p.Vaulted ? "Prime part Â· vaulted" : "Prime part", image = Market.Item(slug)?.Image, price = Market.Price(slug, false)?.Sell, have = Count(p.Uid) })); }
+        foreach (var r in Catalog.Relics.Values) if (MatchRank(r.Name + " Relic", query) != null) hits.Add(J.Node(new { kind = "relic", key = r.Name, name = r.Name + " Relic", sub = r.Vaulted ? "Relic Â· vaulted" : "Relic", image = Services.Catalog.ImageUrl(r.Image), have = r.Uids.Values.Sum(Count) }));
           foreach (var s in J.A(new StandingService(this).Summary(null, null), "syndicates"))
-              if (J.S(s, "name") is { } name && MatchRank(name, query) != null) hits.Add(J.Node(new { kind = "syndicate", key = "syndicate:" + J.S(s, "tag"), name, sub = "Syndicate · standing and offerings", image = J.S(s, "icon") }));
+              if (J.S(s, "name") is { } name && MatchRank(name, query) != null) hits.Add(J.Node(new { kind = "syndicate", key = "syndicate:" + J.S(s, "tag"), name, sub = "Syndicate Â· standing and offerings", image = J.S(s, "icon") }));
           var represented = hits.Select(h => J.S(h, "name")!).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var it in Catalog.Lookup.Values) if (!Catalog.Items.ContainsKey(it.Uid) && MatchRank(it.Name, query) != null && represented.Add(it.Name)) hits.Add(J.Node(new { kind = "lookup", key = "lookup:" + it.Uid, name = it.Name, sub = it.Category, image = Services.Catalog.ImageUrl(it.Image) }));
           foreach (var name in Catalog.Drops.Names) if (MatchRank(name, query) != null && represented.Add(name)) hits.Add(J.Node(new { kind = "drop", key = "drop:" + name, name, sub = "Drop sources", image = Catalog.ArtByName(name) }));

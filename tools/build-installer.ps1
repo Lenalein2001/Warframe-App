@@ -13,6 +13,12 @@ if (!$compilerPath -or !(Test-Path -LiteralPath $compilerPath)) { throw 'Inno Se
 # Remove only known shared-runtime files from older self-contained installs.
 # Names come from the build machine's .NET 10 shared frameworks, never user profile data.
 $runtimeNames = @('hostfxr.dll', 'hostpolicy.dll')
+# Managed files shipped before the Windows bundle. Remove only known obsolete
+# program files, and only when the incoming payload no longer contains them.
+$runtimeNames += @('Core.dll', 'Host.dll', 'Persistence.dll', 'Services.dll',
+    'WarframeCompanion.Desktop.dll', 'WarframeCompanion.Desktop.deps.json',
+    'Microsoft.Data.Sqlite.dll', 'Photino.NET.dll', 'SkiaSharp.dll',
+    'SQLitePCLRaw.batteries_v2.dll', 'SQLitePCLRaw.core.dll', 'SQLitePCLRaw.provider.e_sqlite3.dll')
 foreach ($line in (& dotnet --list-runtimes)) {
     if ($line -match '^(Microsoft.NETCore.App|Microsoft.AspNetCore.App) (10\.\S+) \[(.+)\]$') {
         $runtimeDirectory = Join-Path $Matches[3] $Matches[2]
@@ -25,7 +31,9 @@ $runtimeNames | Sort-Object -Unique | Where-Object {
 } | ForEach-Object { 'Type: files; Name: "{app}\' + $_ + '"' } | Set-Content -LiteralPath $cleanup -Encoding utf8NoBOM
 $output = if ($IsolatedTest) { Join-Path $package 'installer-test' } else { $package }
 [string[]]$defines = if ($IsolatedTest) { @('/DIsolatedTest') } else { @() }
-& $compilerPath @defines "/DRuntimeCleanupInclude=$cleanup" "/DPayloadDirectory=$payload" "/DOutputDirectory=$output" (Join-Path $PSScriptRoot '../packaging/windows/WarframeCompanion.iss')
+$releaseVersion = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../VERSION')).Trim()
+if ($releaseVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version.' }
+& $compilerPath @defines "/DReleaseVersion=$releaseVersion" "/DRuntimeCleanupInclude=$cleanup" "/DPayloadDirectory=$payload" "/DOutputDirectory=$output" (Join-Path $PSScriptRoot '../packaging/windows/WarframeCompanion.iss')
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
 
 Get-ChildItem -LiteralPath $package -File | Where-Object { $_.Extension -in '.zip', '.exe' } | Sort-Object Name | ForEach-Object {
