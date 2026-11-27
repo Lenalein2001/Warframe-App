@@ -69,6 +69,14 @@ Standard packages include the desktop host, services, native libraries and embed
 
 The OCR descriptor is embedded in Services and pins the archive and every extracted file. Prepare the optional asset and descriptor before publishing the application, then publish the exact asset at the descriptor URL. Until that asset is published, the button reports that the download is unavailable. Do not replace the asset with different bytes. No remote manifest or caller-supplied executable URL is accepted. Linux uses distribution-managed OCR packages.
 
+For a Windows release, run the package and installer smoke tests against the same clean checkout. Then collect the installer, both portables and the pinned OCR archive together:
+
+```text
+python tools/stage-windows-release.py PACKAGE_DIR SINGLE_FILE_DIR PATH/WarframeCompanion-OCR-win-x64.zip NEW_OUTPUT_DIR
+```
+
+The release version comes from `VERSION`. The staging tool checks the embedded source revision and the checksums before creating the download directory.
+
 Package output goes to a unique directory under `artifacts`. No account data is packaged. Do not infer desktop sizes from the older inventory-only CLI artifacts.
 
 The separate `src/App` CLI remains available for inventory validation, explicit complete imports, current/history inspection, normalized export, SQLite backup and integrity checking. Its data-directory defaults differ from the desktop; supply `--data-dir` when using it against a desktop snapshot database.
@@ -83,7 +91,7 @@ Publishing uses neither obfuscation nor managed native-AOT compilation. Compress
 
 Match source to the build's commit before reviewing it. Check `src/Native/memory.cpp` for OS process access, `src/Services/MemoryProvider.cs` for extraction, `src/Services/CompanionRuntime.Game.cs` for scheduling and persistence, and `src/Host/CompanionServer.cs` / `LocalApiCredential.cs` for local API authentication. Review build scripts and dependencies as well: readable source and passing tests are not a publisher approval or a guarantee against all security defects. Do not share account databases, raw memory, screenshots, or `api-*.auth` credentials when reporting findings.
 
-Published payloads contain `build-manifest.json` recording the source commit, whether tracked source changes were present, the runtime/edition and file hashes. Run `python tools/release-manifest.py PATH_TO_APP --verify` against an extracted, unused payload. Runtime files created after launch are intentionally not release contents. Windows builds emit `SHA256SUMS-windows.txt`; Linux release packaging emits `SHA256SUMS-linux.txt`. Compare checksums from a trusted release download; a manifest is not a digital signature.
+Published payloads contain `build-manifest.json` recording the source commit, whether source changes were present, the runtime/edition and file hashes. Run `python tools/release-manifest.py PATH_TO_APP --verify` against an extracted, unused payload. Runtime files created after launch are intentionally not release contents. Windows builds emit `SHA256SUMS-windows.txt`; Linux release packaging emits `SHA256SUMS-linux.txt`. Compare checksums from a trusted release download; a manifest is not a digital signature.
 
 The native memory reader validates the opened Windows process image name, or the Linux process name through a pinned `/proc` directory, before reading memory. This prevents accidental reads after PID reuse; it is not binary authentication against deliberate impersonation. Self-process reads remain available for isolated native regression fixtures. Tests reject a disposable non-game child process without reading its memory.
 

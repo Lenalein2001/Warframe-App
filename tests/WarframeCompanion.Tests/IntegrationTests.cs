@@ -805,6 +805,8 @@ public static class IntegrationTests
             release["assets"] = new JsonArray(new JsonObject { ["name"] = "Warframe Companion.exe" });
             Check(UpdateService.NewerRelease(release, "0.9.0", "win-x64") != null, "Single-file Windows release missing");
             Check(UpdateService.NewerRelease(release, "0.9.0", "linux-x64") == null, "Single-file Windows release offered on Linux");
+            release["assets"] = new JsonArray(new JsonObject { ["name"] = "WarframeCompanion-win-x64.exe" });
+            Check(UpdateService.NewerRelease(release, "0.9.0", "win-x64") != null, "Release asset filename missing");
             release["assets"] = new JsonArray(); Check(UpdateService.NewerRelease(release, "0.9.0", "win-x64") == null, "Rust release offered");
         });
         test("Settings reject fractional values and allow disabling hotkeys", () =>

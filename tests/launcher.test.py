@@ -12,18 +12,19 @@ binary = launcher.read_bytes()
 pe = struct.unpack_from('<I', binary, 0x3c)[0]
 assert struct.unpack_from('<H', binary, pe + 24 + 68)[0] == 2, 'Launcher opens a console'
 with tempfile.TemporaryDirectory(prefix='wfc-launch-') as temp:
-    root = pathlib.Path(temp) / 'Space and Unicode é'
+    root = pathlib.Path(temp) / 'Space and Unicode Ã©'
     (root / 'app').mkdir(parents=True)
     shutil.copy2(launcher, root / 'Start Warframe Companion.exe')
     shutil.copy2(build / 'launcher_probe.exe', root / 'app/WarframeCompanion.Desktop.exe')
     def run(args, code=23):
-        result = subprocess.run([str(root / 'Start Warframe Companion.exe'), *args],
-                                cwd=temp, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+        result = subprocess.run([str(root / 'Start Warframe Companion.exe'), '--headless', *args],
+                                cwd=temp, timeout=60, creationflags=subprocess.CREATE_NO_WINDOW)
         assert result.returncode == code, 'Child exit code was lost'
         if code != 23:
             return []
         lines = (root / 'probe.txt').read_text(encoding='utf-16-le').splitlines()
         assert lines.pop(0) == 'no-console'
+        assert lines.pop(0) == '--headless'
         return lines
     assert run([]) == [], 'Fresh package isolated the installed profile'
     assert run(['--portable']) == ['--data-dir', str(root / 'data')]

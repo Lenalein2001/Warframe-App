@@ -54,6 +54,7 @@ with tempfile.TemporaryDirectory(prefix='wfc-single-file-') as temporary:
                     time.sleep(.05)
             elapsed = time.monotonic() - started
             assert state['accounts'] == []
+            assert state['version'] == (Path(__file__).resolve().parents[1] / 'VERSION').read_text().strip()
             assert b'<html' in request('')
             assert request('licenses/LICENSE.txt')
             settings = request('api/settings')

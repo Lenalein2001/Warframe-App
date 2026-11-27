@@ -19,12 +19,12 @@ Warframe Companion brings collection progress, crafting information and reward c
 
 | | |
 | --- | --- |
-| **Inventory** | Search equipment and resources, filter by mastery and trading status, and see which recipes consume an item. |
+| **Inventory** | Search equipment and resources, filter by mastery and trading status, compare confirmed syncs, and see how many copies to keep for crafting. |
 | **Collections** | Track mastery, prime sets, relics, missing parts and pinned items. |
-| **Crafting and farming** | Review foundry jobs, required materials, drop locations and saved farming plans. |
+| **Crafting and farming** | Review foundry jobs, required materials, drop locations and saved farming plans. Record finished builds and reward picks until inventory confirms them. |
 | **Relic rewards** | Compare recognized rewards, ownership and market values in an overlay. |
 | **Rivens and markets** | Grade rolls, decode explicit riven fingerprints and look up market prices. |
-| **World and standing** | Browse fissures, cycles, events, syndicates and offers. |
+| **World and standing** | Browse fissures, cycles, events, syndicates, Duviri Cave offers on the farming board and the Circuit reset time. |
 | **Desktop integration** | Receive native notifications and use shortcuts for common actions. |
 
 ### Review mastered weapons

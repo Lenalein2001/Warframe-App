@@ -72,6 +72,7 @@ for package in json.loads((packages / 'measurements.json').read_text(encoding='u
                     (packages / 'startup-smoke.json').write_text(json.dumps(timings, indent=2), encoding='utf-8')
                     assert not (data / 'extraction').exists(), 'Bundle extracted files during startup'
                     assert state['accounts'] == [], 'Package accessed real account data'
+                    assert state['version'] == (pathlib.Path(__file__).resolve().parents[1] / 'VERSION').read_text().strip()
                     assert b'<html' in request(port, ''), 'Embedded interface missing'
                     duplicate = subprocess.run([str(executable), '--headless', '--offline', '--no-game',
                                                 '--data-dir', str(data), '--port', str(port)],
