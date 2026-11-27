@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(warframe_native LANGUAGES C CXX)
+set(COMPANION_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../packaging/windows/source-paths.cmake")
 add_library(warframe_native SHARED native.cpp memory.cpp vendor/lzma/LzmaDec.c)
 if(WIN32)
   enable_language(RC)

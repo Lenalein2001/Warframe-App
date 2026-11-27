@@ -1,8 +1,8 @@
-param([string]$OutputDirectory = 'artifacts/ocr-minimal', [ValidateRange(1,32)][int]$Parallel = 4)
+param([string]$OutputDirectory = 'artifacts/ocr-minimal', [ValidateRange(1,32)][int]$Parallel = 4, [string]$WorkDirectory)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $repo = Split-Path $PSScriptRoot -Parent
-$work = Join-Path $repo 'artifacts/ocr-native-build'
+$work = if ($WorkDirectory) { [IO.Path]::GetFullPath($WorkDirectory) } else { Join-Path $repo 'artifacts/ocr-native-build' }
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath $output) { throw 'Choose a new output directory so old OCR DLLs cannot remain in the bundle.' }
 New-Item -ItemType Directory -Force $work | Out-Null
@@ -31,6 +31,7 @@ foreach ($name in @('leptonica','tesseract')) {
 }
 $prefix = "$work/install"
 $common = @('-A','x64','-DBUILD_SHARED_LIBS=OFF','-DCMAKE_POLICY_VERSION_MINIMUM=3.5','-DCMAKE_POLICY_DEFAULT_CMP0091=NEW','-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded',"-DCMAKE_INSTALL_PREFIX=$prefix",'-DCMAKE_DISABLE_FIND_PACKAGE_PkgConfig=TRUE')
+$common += @("-DCOMPANION_SOURCE_ROOT:PATH=$work", "-DCMAKE_PROJECT_INCLUDE:FILEPATH=$repo/packaging/windows/source-paths.cmake")
 Cmake 'configure-leptonica' (@('-S',"$work/leptonica-$leptVersion",'-B',"$work/lept") + $common + @('-DSW_BUILD=OFF','-DBUILD_PROG=OFF','-DENABLE_ZLIB=OFF','-DENABLE_PNG=OFF','-DENABLE_GIF=OFF','-DENABLE_JPEG=OFF','-DENABLE_TIFF=OFF','-DENABLE_WEBP=OFF','-DENABLE_OPENJPEG=OFF'))
 Cmake 'build-leptonica' @('--build',"$work/lept",'--config','Release','--target','INSTALL','--parallel',"$Parallel")
 Cmake 'configure-tesseract' (@('-S',"$work/tesseract-$tessVersion",'-B',"$work/tess") + $common + @("-DCMAKE_PREFIX_PATH=$prefix",'-DWIN32_MT_BUILD=ON','-DDISABLED_LEGACY_ENGINE=ON','-DGRAPHICS_DISABLED=ON','-DDISABLE_CURL=ON','-DDISABLE_ARCHIVE=ON','-DDISABLE_TIFF=ON','-DOPENMP_BUILD=OFF','-DBUILD_TRAINING_TOOLS=ON','-DBUILD_TESTS=OFF','-DENABLE_NATIVE=OFF','-DENABLE_LTO=ON'))

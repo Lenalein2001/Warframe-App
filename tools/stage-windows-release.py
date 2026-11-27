@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -12,6 +13,13 @@ from zipfile import ZipFile
 def digest(path):
     with path.open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def check_build_paths(data, name):
+    # MSVC and C++ source_location can embed __FILE__ even with symbols excluded.
+    for pattern in (rb'[a-z]:[/\\]users[/\\]', rb'[a-z]\0:\0[/\\]\0u\0s\0e\0r\0s\0[/\\]\0'):
+        if re.search(pattern, data, re.IGNORECASE):
+            raise ValueError(f'Windows user profile path embedded in {name}')
 
 
 def stage(package, single, ocr, destination):
@@ -37,6 +45,12 @@ def stage(package, single, ocr, destination):
         expected[name] = checksum
     expected[exe.name] = single_manifest['sha256'].lower()
     expected[ocr.name] = descriptor['sha256']
+    for path in (portable, ocr):
+        with ZipFile(path) as archive:
+            for name in archive.namelist():
+                if name.lower().endswith(('.dll', '.exe')):
+                    check_build_paths(archive.read(name), name)
+    check_build_paths(exe.read_bytes(), exe.name)
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=destination.parent) as temporary:
         output = Path(temporary) / 'windows-x64'

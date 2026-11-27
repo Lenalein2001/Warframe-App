@@ -22,6 +22,8 @@ jobs:
         run: |
           python tests/archive.test.py
           if ($LASTEXITCODE -ne 0) { throw 'Archive tests failed.' }
+          python tests/windows-release.test.py
+          if ($LASTEXITCODE -ne 0) { throw 'Release privacy or OCR pin test failed.' }
           $package = 'artifacts/windows-package'
           ./tools/publish-companion.ps1 -OutputDirectory $package
           ./tools/publish-single-file.ps1 -OutputDirectory artifacts/single-file
