@@ -45,14 +45,24 @@ if ($LASTEXITCODE -ne 0) { throw 'Release manifest creation failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Release manifest verification failed.' }
 $portable = Join-Path $outputRoot "$edition-portable"
 New-Item -ItemType Directory -Path $portable | Out-Null
-Copy-Item -LiteralPath $destination -Destination (Join-Path $portable 'app') -Recurse
-$innerLauncher = Join-Path $portable ('app/' + $(if ($Runtime.StartsWith('win-')) { 'Portable.cmd' } else { 'Portable.sh' }))
-if (Test-Path -LiteralPath $innerLauncher) { Remove-Item -LiteralPath $innerLauncher }
 Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging/PORTABLE.md') -Destination (Join-Path $portable 'README.md')
-if ($Runtime.StartsWith('win-')) {
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'src/Native/build/Release/companion_launcher.exe') -Destination (Join-Path $portable 'Start Warframe Companion.exe')
+if ($Runtime -eq 'win-x64' -and !$IncludeOcr) {
+    $single = Join-Path $outputRoot 'single-file'
+    & (Join-Path $PSScriptRoot 'publish-single-file.ps1') -OutputDirectory $single
+    Copy-Item -LiteralPath (Join-Path $single 'portable/WarframeCompanion-win-x64.exe') -Destination (Join-Path $portable 'Start Warframe Companion.exe')
+    & python (Join-Path $PSScriptRoot 'release-manifest.py') $portable --runtime $Runtime --edition single-file-portable
+    if ($LASTEXITCODE -ne 0) { throw 'Portable manifest creation failed.' }
 } else {
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging/linux/Portable.sh') -Destination $portable
+    Copy-Item -LiteralPath $destination -Destination (Join-Path $portable 'app') -Recurse
+    if ($Runtime -eq 'win-x64') {
+        Copy-Item -LiteralPath (Join-Path $repoRoot 'src/Native/build/Release/companion_launcher.exe') -Destination (Join-Path $portable 'Start Warframe Companion.exe')
+    } else {
+        Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging/linux/Portable.sh') -Destination $portable
+    }
+    foreach ($name in @('Portable.cmd', 'Portable.sh')) {
+        $innerLauncher = Join-Path $portable "app/$name"
+        if (Test-Path -LiteralPath $innerLauncher) { Remove-Item -LiteralPath $innerLauncher }
+    }
 }
 $label = 'portable'
 $extension = if ($Runtime.StartsWith('win-')) { 'zip' } else { 'tar.gz' }

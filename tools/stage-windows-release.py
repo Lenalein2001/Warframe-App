@@ -31,8 +31,10 @@ def stage(package, single, ocr, destination):
     installer = package / 'WarframeCompanion-win-x64-Setup.exe'
     exe = single / 'portable' / 'WarframeCompanion-win-x64.exe'
     with ZipFile(portable) as archive:
-        manifest = json.loads(archive.read('app/build-manifest.json'))
+        manifest = json.loads(archive.read('build-manifest.json'))
     single_manifest = json.loads((single / 'package.json').read_text(encoding='utf-8-sig'))
+    if manifest['files']['Start Warframe Companion.exe']['sha256'] != single_manifest['sha256'].lower():
+        raise ValueError('The ZIP must contain the tested single-file executable.')
     for source in (manifest, single_manifest):
         if source['commit'] != commit or source['uncommittedChanges'] or source['runtime'] != 'win-x64':
             raise ValueError('Package was built from different or uncommitted sources.')

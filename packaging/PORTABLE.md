@@ -1,19 +1,15 @@
 # Warframe Companion portable
 
-Extract the entire archive before starting.
+Extract the archive into a folder before starting the companion.
 
-.NET runtimes are not bundled. Install .NET 10 and ASP.NET Core 10 for your platform and architecture. On Windows, use the x64 runtime installers from https://dotnet.microsoft.com/en-us/download/dotnet/10.0 (the SDK is not needed). If a required runtime is missing, the Windows executable displays Microsoft's download prompt. On Linux, install your distribution's ASP.NET Core 10 package; on Ubuntu 24.04 this is `aspnetcore-runtime-10.0`.
+- **Windows** - Open `Start Warframe Companion.exe`. The standard ZIP runs the same program as the single-file download. It needs the x64 .NET 10 and ASP.NET Core 10 runtimes and WebView2. A missing runtime opens Microsoft's download prompt.
+- **Linux** - Run `./Portable.sh`. Install your distribution's ASP.NET Core 10 runtime and the native libraries listed in `app/README.md`. OCR and a screenshot tool are optional.
+- If the archive contains an `app/` directory, keep it beside the launcher. This applies to Linux and Windows offline OCR bundles.
 
-- **Windows:** double-click `Start Warframe Companion.exe`.
-- **Linux:** run `./Portable.sh`. Install the native GTK/WebKit and OCR dependencies listed in `app/README.md`.
-- **app/** contains the program, libraries and licenses. Keep these files together.
+### Profiles and updates
 
-A fresh package uses the same settings, accounts and inventory as the installed app. An existing `data/state.sqlite` or `data/companion.sqlite` beside the launcher selects that portable profile instead. To create a separate portable profile, run the launcher with `--portable`. Use `--data-dir PATH` for a specific profile. No profiles are merged or overwritten.
+A fresh copy uses your installed profile. If the adjacent `data/` folder contains an existing companion database, the companion uses that portable profile. Pass `--portable` to create portable storage or `--data-dir PATH` to choose a profile directory.
 
-To update, close the companion, back up your profile, and extract the new package into a new folder. If you use portable storage, copy the existing `data/` folder into the new folder before starting its launcher. Keep the old copy until you have confirmed the update works. Do not run both copies together.
+To update, close the companion and extract the new ZIP into a new folder. Copy your existing portable `data/` folder there before the first launch. An installed profile is picked up automatically.
 
-To bring an installed profile with you, close the companion and copy the contents of `%LOCALAPPDATA%\WarframeCompanion` (Windows) or `~/.local/share/WarframeCompanion` (Linux) into the package's `data/` folder. Back up both folders first.
-
-Always use the top-level launcher: starting the executable inside `app/` directly selects the normal per-user profile.
-
-If startup fails, confirm that you extracted the entire archive and kept the launcher beside `app/`. Windows displays a startup error; failures after opening the profile also write a short `startup-error.log` there, without account or inventory contents. A profile already running in the desktop app is brought forward instead of starting a second backend.
+To transfer an installed profile, close the app, back it up, and copy its contents into the portable `data/` folder. Installed profiles live in `%LOCALAPPDATA%\WarframeCompanion` on Windows and `~/.local/share/WarframeCompanion` on Linux.

@@ -42,7 +42,7 @@ Download packages from [GitHub Releases](https://github.com/Lenalein2001/Warfram
 ### Windows
 
 - **Installer:** run `WarframeCompanion-win-x64-Setup.exe` for a per-user installation and Start menu shortcut. Setup shows download links only for missing runtimes and can check again without restarting.
-- **Portable:** extract `WarframeCompanion-win-x64-portable.zip` and run `Start Warframe Companion.exe`. Program files stay in `app/`. A fresh copy shares your installed profile; an existing `data/` profile stays portable. Use `--portable` to create separate portable storage.
+- **Portable:** extract `WarframeCompanion-win-x64-portable.zip` and run `Start Warframe Companion.exe`. The ZIP contains the same executable as the standalone download. A fresh copy shares your installed profile; an existing `data/` profile stays portable. Use `--portable` to create separate portable storage.
 - **Requirements:** install the latest x64 .NET 10 and ASP.NET Core 10 runtimes from [Microsoft](https://dotnet.microsoft.com/en-us/download/dotnet/10.0). The SDK is not needed. Windows displays a download prompt if a required runtime is missing.
 
 Opening the same profile again brings its running desktop window forward. Each profile runs in one companion process.

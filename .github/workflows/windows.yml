@@ -26,10 +26,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Release privacy or OCR pin test failed.' }
           $package = 'artifacts/windows-package'
           ./tools/publish-companion.ps1 -OutputDirectory $package
-          ./tools/publish-single-file.ps1 -OutputDirectory artifacts/single-file
-          python tools/smoke-single-file.py "artifacts/single-file/portable/WarframeCompanion-win-x64.exe" artifacts/single-file/startup-smoke.json
+          python tools/smoke-single-file.py "artifacts/windows-package/single-file/portable/WarframeCompanion-win-x64.exe" artifacts/windows-package/single-file/startup-smoke.json
           if ($LASTEXITCODE -ne 0) { throw 'Single-file checks failed.' }
-          python tests/runtime-requirement.test.py "artifacts/single-file/portable/WarframeCompanion-win-x64.exe"
+          python tests/runtime-requirement.test.py "artifacts/windows-package/single-file/portable/WarframeCompanion-win-x64.exe"
           if ($LASTEXITCODE -ne 0) { throw 'Single-file missing-runtime test failed.' }
           python tests/launcher.test.py src/Native/build/Release
           if ($LASTEXITCODE -ne 0) { throw 'Native launcher tests failed.' }
@@ -52,6 +51,6 @@ jobs:
             artifacts/windows-package/measurements.json
             artifacts/windows-package/*Setup.exe
             artifacts/windows-package/SHA256SUMS-windows.txt
-            artifacts/single-file/portable/*.exe
-            artifacts/single-file/package.json
-            artifacts/single-file/startup-smoke.json
+            artifacts/windows-package/single-file/portable/*.exe
+            artifacts/windows-package/single-file/package.json
+            artifacts/windows-package/single-file/startup-smoke.json

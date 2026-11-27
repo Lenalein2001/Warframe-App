@@ -60,7 +60,6 @@ Partial inventory observations cannot replace confirmed inventory. Older or unor
 ./tools/build-ocr.ps1 -OutputDirectory artifacts/ocr
 python tools/package-ocr.py artifacts/ocr artifacts/optional-ocr/WarframeCompanion-OCR-win-x64.zip --descriptor src/Services/ocr-package.json
 ./tools/publish-companion.ps1 -Runtime win-x64
-./tools/publish-single-file.ps1
 ```
 
 The OCR build script compiles pinned Tesseract and Leptonica sources with MSVC into one static executable. It omits network, archive, legacy recognition and external image-codec dependencies. The app decodes screenshots with Skia and passes lossless PPM pixels to OCR; this minimal executable is not a general-purpose PNG/JPEG command-line reader. Tesseract's own tool removes the unused legacy classifier while retaining the original English LSTM model and dictionaries; source archives and model files are checked by SHA-256. Choose a fresh output directory to prevent stale DLLs entering the bundle.
@@ -72,7 +71,7 @@ The OCR descriptor is embedded in Services and pins the archive and every extrac
 For a Windows release, run the package and installer smoke tests against the same clean checkout. Then collect the installer, both portables and the pinned OCR archive together:
 
 ```text
-python tools/stage-windows-release.py PACKAGE_DIR SINGLE_FILE_DIR PATH/WarframeCompanion-OCR-win-x64.zip NEW_OUTPUT_DIR
+python tools/stage-windows-release.py PACKAGE_DIR PACKAGE_DIR/single-file PATH/WarframeCompanion-OCR-win-x64.zip NEW_OUTPUT_DIR
 ```
 
 The release version comes from `VERSION`. The staging tool checks the embedded source revision and the checksums before creating the download directory.
@@ -87,7 +86,7 @@ Run the regression and package smoke tests before distributing a build. Headless
 
 ## Inspecting the application
 
-Windows packages contain ordinary managed assemblies inside the executable. Open the executable in ILSpy to inspect the bundled assemblies and Host's embedded `web/` resources. The single-file portable extracts only native libraries; managed assemblies load from the bundle. The multi-file package keeps native libraries beside its executable.
+Windows packages contain ordinary managed assemblies inside the executable. Open the executable in ILSpy to inspect the bundled assemblies and Host's embedded `web/` resources. The single-file portable extracts only native libraries; managed assemblies load from the bundle. The installed Windows edition keeps native libraries beside its executable.
 
 Publishing uses neither obfuscation nor managed native-AOT compilation. Compression and trimming are disabled. Release builds omit PDB files; local Debug builds retain symbols. Native source is in `src/Native/`; optimized machine code is not equivalent to recoverable original C++ source.
 
@@ -97,4 +96,4 @@ Published payloads contain `build-manifest.json` recording the source commit, wh
 
 The native memory reader validates the opened Windows process image name, or the Linux process name through a pinned `/proc` directory, before reading memory. This prevents accidental reads after PID reuse; it is not binary authentication against deliberate impersonation. Self-process reads remain available for isolated native regression fixtures. Tests reject a disposable non-game child process without reading its memory.
 
-Standard publish output is runtime-dependent. Windows installers use the same payload as the portable archive; Linux Debian packages depend on `aspnetcore-runtime-10.0`. Do not add shared .NET or ASP.NET runtime files to release payloads.
+Standard publish output is runtime-dependent. The standard Windows ZIP and the standalone download use the same direct-launch executable; Linux Debian packages depend on `aspnetcore-runtime-10.0`. Do not add shared .NET or ASP.NET runtime files to release payloads.

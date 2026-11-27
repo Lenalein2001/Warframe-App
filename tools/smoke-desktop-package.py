@@ -35,13 +35,15 @@ for package in json.loads((packages / 'measurements.json').read_text(encoding='u
         extracted = data / 'package'
         with zipfile.ZipFile(archive_path) as archive:
             archive.extractall(extracted)
-        subprocess.run([sys.executable, str(pathlib.Path(__file__).with_name('release-manifest.py')), str(extracted / 'app'), '--verify'], check=True)
-        assert {p.name for p in extracted.iterdir()} == {'app', 'README.md', 'Start Warframe Companion.exe'}
-        config = json.loads((extracted / 'app/WarframeCompanion.Desktop.runtimeconfig.json').read_text())
-        assert {f['name'] for f in config['runtimeOptions']['frameworks']} == {'Microsoft.NETCore.App', 'Microsoft.AspNetCore.App'}
-        assert not (extracted / 'app/coreclr.dll').exists(), 'Shared runtime was bundled'
-        assert not (extracted / 'app/System.Private.CoreLib.dll').exists(), 'Framework assembly was bundled'
-        assert not (extracted / 'app/WarframeCompanion.Desktop.dll').exists(), 'Managed application was not bundled'
+        offline_bundle = (extracted / 'app').is_dir()
+        manifest_root = extracted / 'app' if offline_bundle else extracted
+        subprocess.run([sys.executable, str(pathlib.Path(__file__).with_name('release-manifest.py')), str(manifest_root), '--verify'], check=True)
+        expected = {'README.md', 'Start Warframe Companion.exe', 'app' if offline_bundle else 'build-manifest.json'}
+        assert {p.name for p in extracted.iterdir()} == expected
+        if offline_bundle:
+            assert (extracted / 'app/tools/tesseract/tesseract.exe').is_file(), 'Standard ZIP reintroduced the child launcher'
+        assert not list(extracted.rglob('coreclr.dll')), 'Shared runtime was bundled'
+        env = {**os.environ, 'DOTNET_BUNDLE_EXTRACT_BASE_DIR': str(data / 'extraction')}
         for restart in (False, True):
             with socket.socket() as listener:
                 listener.bind(('127.0.0.1', 0))
@@ -52,7 +54,7 @@ for package in json.loads((packages / 'measurements.json').read_text(encoding='u
                 process = subprocess.Popen([str(executable), '--headless', '--offline', '--no-game',
                                             '--data-dir', str(data), '--port', str(port)],
                                            stdout=out, stderr=err,
-                                           env={**os.environ, 'DOTNET_BUNDLE_EXTRACT_BASE_DIR': str(data / 'extraction')},
+                                           env=env,
                                            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
                 try:
                     while True:
@@ -70,13 +72,13 @@ for package in json.loads((packages / 'measurements.json').read_text(encoding='u
                     timings.append({'edition': edition, 'restart': restart,
                                     'headless_backend_seconds': backend_seconds, 'stages': trace})
                     (packages / 'startup-smoke.json').write_text(json.dumps(timings, indent=2), encoding='utf-8')
-                    assert not (data / 'extraction').exists(), 'Bundle extracted files during startup'
+                    assert (data / 'extraction').exists() == (not offline_bundle), 'Unexpected native library layout'
                     assert state['accounts'] == [], 'Package accessed real account data'
                     assert state['version'] == (pathlib.Path(__file__).resolve().parents[1] / 'VERSION').read_text().strip()
                     assert b'<html' in request(port, ''), 'Embedded interface missing'
                     duplicate = subprocess.run([str(executable), '--headless', '--offline', '--no-game',
                                                 '--data-dir', str(data), '--port', str(port)],
-                                               capture_output=True, timeout=15, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                                               capture_output=True, timeout=15, env=env, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
                     assert duplicate.returncode != 0, 'Duplicate process acquired the same profile'
                     assert request(port, 'api/state')['accounts'] == [], 'Duplicate launch damaged the running instance'
                     settings = request(port, 'api/settings')
@@ -86,7 +88,7 @@ for package in json.loads((packages / 'measurements.json').read_text(encoding='u
                         request(port, 'api/settings', {'notify': True, 'hotkey_rewards': ''})
                     # Local credentials must never be sent through configured proxies.
                     command = subprocess.run([str(executable), 'quit', '--data-dir', str(data), '--port', str(port)],
-                                             env={**os.environ, 'HTTP_PROXY': 'http://127.0.0.1:1', 'ALL_PROXY': 'http://127.0.0.1:1', 'NO_PROXY': ''},
+                                             env={**env, 'HTTP_PROXY': 'http://127.0.0.1:1', 'ALL_PROXY': 'http://127.0.0.1:1', 'NO_PROXY': ''},
                                              capture_output=True, timeout=30, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
                     assert command.returncode == 0, 'Authenticated desktop command failed with a proxy configured'
                     assert process.wait(timeout=15) == 0, 'Unclean application shutdown'

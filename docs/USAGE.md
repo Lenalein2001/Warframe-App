@@ -16,9 +16,9 @@ No known crafting uses means no consuming recipes were found in the loaded catal
 
 ## Reward picks, finished builds and Duviri
 
-In **Overview → Relic rewards**, use **Pick** beside the reward you took. Select a different reward to correct it, or click **Picked** to clear the choice. In **Foundry**, use **Mark collected** after collecting a finished job in Warframe. Equipment details also offer **Mark as built** for crafts missing from the last read. Inventory includes these marks until a confirmed sync covers their time. **Changes since last sync** continues to compare confirmed reads.
+In **Overview â†’ Relic rewards**, use **Pick** beside the reward you took. Select a different reward to correct it, or click **Picked** to clear the choice. In **Foundry**, use **Mark collected** after collecting a finished job in Warframe. Equipment details also offer **Mark as built** for crafts missing from the last read. Inventory includes these marks until a confirmed sync covers their time. **Changes since last sync** continues to compare confirmed reads.
 
-In **Farming**, matching goals show whether equipment was offered in Teshin's Cave. **World → Duviri** lists the saved offers and the weekly Circuit reset in your local time. An older or undated roll is labelled separately.
+In **Farming**, matching goals show whether equipment was offered in Teshin's Cave. **World â†’ Duviri** lists the saved offers and the weekly Circuit reset in your local time. An older or undated roll is labelled separately.
 
 ## Recognition
 
@@ -46,7 +46,7 @@ Wayland overlays require layer-shell support or an available XWayland fallback. 
 
 Normal startup uses `%LOCALAPPDATA%\WarframeCompanion` on Windows and copies legacy data on the first launch. Original files are retained. Back up the data directory before moving it between machines. Do not run multiple instances against the same port.
 
-Portable archives keep program files in `app/`. Use the top-level launcher and keep `data/` when updating. To bring an installed profile into a portable copy, close the app and copy the contents of its normal data directory into the portable `data/` directory first.
+Linux portables and offline OCR bundles keep program files in `app/`. Use the top-level launcher and keep `data/` when updating. To bring an installed profile into a portable copy, close the app and copy the contents of its normal data directory into the portable `data/` directory first.
 
 `--data-dir PATH` selects another location; `--offline` uses cached data; `--headless` runs without a desktop window. Full build and command-line documentation is in [the repository](https://github.com/Lenalein2001/Warframe-App/tree/senpai/docs).
 
@@ -58,7 +58,7 @@ The running app writes `api-<port>.auth` in its data directory with user-only ac
 
 ## Startup troubleshooting
 
-Extract the entire portable archive before opening its top-level launcher. Keep the `app/` directory beside it. Opening the same profile twice activates its existing desktop window; headless instances must be stopped before opening that profile in the desktop app. Separate profiles can run with different `--data-dir` and `--port` values.
+Extract the entire portable archive before opening its top-level launcher. For archives that include an `app/` directory, keep it beside the launcher. Opening the same profile twice activates its existing desktop window; headless instances must be stopped before opening that profile in the desktop app. Separate profiles can run with different `--data-dir` and `--port` values.
 
 Windows startup errors use a native message box. Headless commands report errors to stderr. If a data directory has been selected, startup failures can also write `startup-error.log` there; it contains the error type and general recovery instructions, not account or inventory data. The empty `.instance.lock` file is normal and may remain after exit. Do not delete it to bypass a running instance.
 
