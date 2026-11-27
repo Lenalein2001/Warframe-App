@@ -7,6 +7,9 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Ubuntu's SDK ships a rebuilt ILLink package under the NuGet.org version.
+         Restore the archive identified by packages.lock.json on every Linux host. -->
+    <DisableImplicitLibraryPacksFolder Condition="$([MSBuild]::IsOSPlatform('Linux'))">true</DisableImplicitLibraryPacksFolder>
     <RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers>
   </PropertyGroup>
 </Project>

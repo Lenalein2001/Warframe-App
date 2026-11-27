@@ -2,13 +2,24 @@
 set -euo pipefail
 version=$(tr -d '\r\n' < VERSION)
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 2
-work=$(mktemp -d)
+if (( $# > 1 )) || [[ "${1:-$version}" != "$version" ]]; then
+    echo "Expected release version $version (from VERSION)." >&2
+    exit 2
+fi
+output=${COMPANION_LINUX_OUTPUT:-artifacts/linux-release}
+if [[ -e "$output" || -L "$output" ]]; then
+    echo "Choose a new COMPANION_LINUX_OUTPUT directory: $output" >&2
+    exit 1
+fi
+mkdir -p -- "$(dirname -- "$output")"
+work=$(mktemp -d "$(cd "$(dirname -- "$output")" && pwd)/.companion-build.XXXXXXXX")
 trap 'rm -rf -- "$work"' EXIT
 package="$work/package"
 stage="$work/debian"
 pwsh -NoProfile -File tools/publish-companion.ps1 -Runtime linux-x64 -OutputDirectory "$package"
-mkdir -p artifacts/linux-release
-cp "$package/WarframeCompanion-linux-x64-portable.tar.gz" artifacts/linux-release/WarframeCompanion-linux-x64-portable.tar.gz
+downloads="$work/downloads"
+mkdir "$downloads"
+mv "$package/WarframeCompanion-linux-x64-portable.tar.gz" "$downloads/"
 mkdir -p "$stage/opt/warframe-companion" "$stage/usr/bin" "$stage/usr/share/applications" "$stage/DEBIAN"
 cp -a "$package/framework-dependent/." "$stage/opt/warframe-companion/"
 chmod 755 "$stage/opt/warframe-companion/WarframeCompanion.Desktop"
@@ -28,5 +39,6 @@ Suggests: tesseract-ocr, tesseract-ocr-eng, scrot
 Description: Warframe inventory, mastery, crafting and reward companion
  Native desktop host with C# services and C/C++ processing.
 EOF
-dpkg-deb --root-owner-group --build "$stage" artifacts/linux-release/WarframeCompanion-linux-x64.deb
-(cd artifacts/linux-release && sha256sum WarframeCompanion-linux-x64-portable.tar.gz WarframeCompanion-linux-x64.deb > SHA256SUMS-linux.txt)
+dpkg-deb --root-owner-group --build "$stage" "$downloads/WarframeCompanion-linux-x64.deb"
+(cd "$downloads" && sha256sum WarframeCompanion-linux-x64-portable.tar.gz WarframeCompanion-linux-x64.deb > SHA256SUMS-linux.txt)
+mv -T -- "$downloads" "$output"

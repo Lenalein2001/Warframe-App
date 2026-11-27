@@ -77,6 +77,8 @@ python tools/stage-windows-release.py PACKAGE_DIR SINGLE_FILE_DIR PATH/WarframeC
 
 The release version comes from `VERSION`. The staging tool checks the embedded source revision and the checksums before creating the download directory.
 
+On Ubuntu, run `bash tools/package-linux.sh` to create the portable archive, Debian package and checksums together. Set `COMPANION_LINUX_OUTPUT` to a new directory for another build. If a previous Ubuntu SDK restore cached a repackaged ILLink tool and reports NU1403, set `NUGET_PACKAGES` to a fresh build cache and repeat the locked restore.
+
 Package output goes to a unique directory under `artifacts`. No account data is packaged. Do not infer desktop sizes from the older inventory-only CLI artifacts.
 
 The separate `src/App` CLI remains available for inventory validation, explicit complete imports, current/history inspection, normalized export, SQLite backup and integrity checking. Its data-directory defaults differ from the desktop; supply `--data-dir` when using it against a desktop snapshot database.

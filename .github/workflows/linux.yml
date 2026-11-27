@@ -24,6 +24,11 @@ jobs:
           python tests/archive.test.py
           python tests/portable-launcher.test.py
           bash tools/package-linux.sh
+          if bash tools/package-linux.sh; then
+            echo "Packaging unexpectedly replaced existing downloads" >&2
+            exit 1
+          fi
+          (cd artifacts/linux-release && sha256sum -c SHA256SUMS-linux.txt)
       - name: Test extracted portable archive and installed package
         run: |
           mkdir -p artifacts/linux-extracted
